@@ -1,0 +1,20 @@
+{
+  "name": "context-mesh-quality",
+  "private": true,
+  "description": "Development quality gates for the planned ContextMesh application",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "quality:js": "eslint . --max-warnings 0",
+    "quality:test:js": "node --test tests/javascript_quality/*.test.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.12.0",
+    "globals": "17.13.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.0"
+  }
+}

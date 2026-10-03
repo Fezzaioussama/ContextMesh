@@ -1,0 +1,16 @@
+target-version = "py312"
+line-length = 100
+respect-gitignore = false
+exclude = [
+    ".git", ".hg", ".svn", ".venv", ".venv-quality", "venv", "env",
+    "node_modules", "vendor", "third_party", "__pycache__", ".pytest_cache",
+    ".mypy_cache", ".ruff_cache", ".tox", ".nox", ".cache", "dist", "build",
+    ".next", ".nuxt", ".svelte-kit", "coverage", "htmlcov", ".coverage_html",
+    "generated", "site-packages", ".data", "*.egg-info",
+]
+
+[lint]
+select = ["E4", "E7", "E9", "F", "I", "C901"]
+
+[lint.mccabe]
+max-complexity = 4

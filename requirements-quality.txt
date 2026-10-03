@@ -1,0 +1,6 @@
+# Tool versions and Radon's dependencies are fixed for repeatable quality checks.
+radon==6.0.1
+ruff==0.16.8
+colorama==0.4.6
+mando==0.7.1
+six==1.17.0

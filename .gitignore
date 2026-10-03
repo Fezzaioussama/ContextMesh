@@ -1,0 +1,52 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+.codex
+# Python
+.venv/
+.venv-quality/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.tox/
+.nox/
+*.egg-info/
+build/
+htmlcov/
+.coverage_html/
+.coverage
+.coverage.*
+coverage.xml
+
+# JavaScript
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.eslintcache
+.next/
+
+# Shared tool caches
+.cache/
+
+# Local runtime data
+.data/
+*.log
+
+# Codex runtime files; keep project config and agent definitions in Git
+.codex/auth.json
+.codex/history.jsonl
+.codex/sessions/
+.codex/log/
+
+# Editor and operating system
+.DS_Store
+.idea/
+.vscode/
