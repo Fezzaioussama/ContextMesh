@@ -54,8 +54,8 @@ export default defineConfig([
       "no-restricted-imports": [
         "error",
         {
-          patterns: ["**/backend/**", "@backend/**", "context_mesh/**"],
-          paths: ["context_mesh"],
+          patterns: ["**/backend/**", "@backend/**", "context_mesh/**", "app/**"],
+          paths: ["context_mesh", "app"],
         },
       ],
     },

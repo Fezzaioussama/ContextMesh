@@ -4,9 +4,108 @@
 
 An extensible Agentic RAG platform for conversational search across documents, websites and enterprise data sources.
 
-**Project status:** architecture and implementation planning. The application has not been implemented yet. This repository defines the proposed first version, its interfaces, and its delivery milestones.
+**Project status:** implementation has started. The first slice builds a React
+frontend, FastAPI backend, and PostgreSQL-backed **Foundation Assistant**, using
+a real model provider configured on the server. Document ingestion, grounded
+retrieval, citations, and the ingestion worker remain planned. M1 is in progress.
 
 Suggested GitHub repository name: `context-mesh`.
+
+## Run the initial assistant
+
+Install Docker with Compose, then run from the repository root:
+
+```bash
+make dev
+```
+
+This creates `.env` from [.env.example](.env.example) only if it does not already
+exist, applies database migrations, and starts the local frontend, API, and
+PostgreSQL. Open [http://localhost:5173](http://localhost:5173). API documentation
+is at [http://localhost:8000/docs](http://localhost:8000/docs).
+
+For OpenRouter, set these server-only values in `.env`, then run `make dev` again:
+
+```dotenv
+CONTEXTMESH_MODEL_PROVIDER=openrouter
+OPENROUTER_API_KEY=your-openrouter-key
+OPENROUTER_MODEL=openai/gpt-4.1-mini
+```
+
+Choose another `OPENROUTER_MODEL` using its full OpenRouter model ID.
+`OPENROUTER_BASE_URL` defaults to `https://openrouter.ai/api/v1`. OpenRouter's
+[stateless Responses API](https://openrouter.ai/docs/api_reference/responses/basic-usage)
+uses saved conversation history without provider-side conversation storage.
+
+For direct OpenAI access, set `CONTEXTMESH_MODEL_PROVIDER=openai`,
+`OPENAI_API_KEY`, and an accessible `OPENAI_MODEL` in `.env`, then run `make dev`.
+The default model is `gpt-4.1-mini`; `OPENAI_BASE_URL` optionally selects a
+compatible Responses API endpoint. Each provider uses its own key and model.
+Credentials stay on the server.
+Without credentials the UI shows setup instructions; it does not invent replies.
+The adapter uses the [OpenAI Responses API](https://developers.openai.com/api/docs/guides/conversation-state).
+
+The assistant supports saved conversations and bounded model replies. Its UI
+labels this as provider chat with no connected knowledge retrieval. These replies
+are general assistant output and carry no document citations or evidence claims.
+The local development identity is not suitable for shared hosting.
+
+`make stop` stops the containers while retaining PostgreSQL's named volume.
+Only localhost ports are published: frontend `5173`, API `8000`, PostgreSQL
+`55432`. A provider key is required for live replies.
+
+For development with hot reload, install Python 3.12+, uv, and Node.js 24+:
+
+```bash
+make app-setup
+make db
+make migrate
+make backend-dev
+# In another terminal:
+make frontend-dev
+```
+
+Backend code and its Dockerfile are in [backend](backend). The UI and its
+Dockerfile are in [frontend](frontend). Shared Compose, environment, ignore,
+workspace lock, and quality configuration live at the repository root. The shared
+HTTP contract and this slice's limits
+are documented in [docs/initial-chat.md](docs/initial-chat.md).
+
+## Verify the implementation
+
+```bash
+make quality-setup
+make quality
+make quality-test
+make app-test
+make smoke-setup
+make smoke
+make smoke SMOKE_PROVIDER=openrouter
+```
+
+PostgreSQL integration and browser checks use a **separate disposable database**.
+For the provided local PostgreSQL container, create it once:
+
+```bash
+docker compose exec -T postgres psql -U contextmesh -d postgres -c 'CREATE DATABASE contextmesh_test'
+export CONTEXTMESH_TEST_DATABASE_URL='postgresql+psycopg://contextmesh:contextmesh@127.0.0.1:55432/contextmesh_test'
+make app-test
+make smoke
+```
+
+The browser smoke check runs the real frontend, API, PostgreSQL persistence, and
+provider adapter against a controlled local Responses API fixture. It does not
+contact a paid model. Live model testing requires separately configured credentials.
+Application CI runs the same checks with its own PostgreSQL service.
+See [the verification record](docs/initial-chat-verification.md) for observed
+results and the distinction between fixture and live-provider verification.
+OpenRouter selection and request compatibility are covered by the
+[OpenRouter verification record](docs/openrouter-verification.md).
+
+On Linux distributions not recognized by the pinned Playwright browser installer,
+use `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 make smoke-setup` for the
+Ubuntu-compatible Chromium build. The runtime still needs Chromium's system
+libraries; CI installs them with Playwright's `--with-deps` option.
 
 ## The experience
 
@@ -51,7 +150,9 @@ flowchart LR
 | Chat, embeddings, reranking | Replaceable provider interfaces |
 | Development environment | Docker Compose, Python and JavaScript lockfiles |
 
-These are proposed project choices. Dependency versions and model IDs will be pinned and verified during implementation.
+This table describes the full target. The initial assistant's dependencies are
+locked in `backend/uv.lock` and the root `package-lock.json`; model selection is
+server configuration. Retrieval and ingestion integrations remain planned.
 
 ## First release scope
 
@@ -76,6 +177,8 @@ OCR, recursive crawling, enterprise OAuth, live SQL/API tools, and distributed m
 | [Quality and evaluation](docs/quality.md) | Access control, failure cases, test strategy, and retrieval evaluation |
 | [Implementation agents](docs/agents.md) | Six specialist roles, ownership, and independent architecture review |
 | [Engineering rules](docs/engineering.md) | SOLID, pattern selection, automated dependency checks, file and complexity limits |
+| [Repository layout](docs/repository-layout.md) | Shared configuration ownership, workspaces, Docker and developer commands |
+| [Repository layout verification](docs/repository-layout-verification.md) | Observed consolidation checks and limitations |
 
 Start with the architecture, then follow milestones **M1–M5** to reach the MVP. The first implementation milestone is a working development environment and a tested domain/persistence foundation.
 
@@ -83,10 +186,12 @@ Start with the architecture, then follow milestones **M1–M5** to reach the MVP
 
 Project-scoped Codex roles in `.codex/agents/` cover backend, ingestion, retrieval, frontend, QA, and architecture review. All implementation roles follow SOLID and the documented architecture, with at most **1,000 physical lines per maintained file** and **cyclomatic complexity 4 per function/method**.
 
-Run `make quality-setup`, `make quality`, and `make quality-test` from the repository root. The tooling validates these limits and selected import boundaries; the architecture guardian separately reviews design and behavior. See the [agent workflow](docs/agents.md) and [measurement policy](docs/engineering.md) for details. Application implementation remains planned.
+Run `make quality-setup`, `make quality`, and `make quality-test` from the repository root. The tooling validates these limits and selected import boundaries; the architecture guardian separately reviews design and behavior. See the [agent workflow](docs/agents.md) and [measurement policy](docs/engineering.md) for details. `make app-test` and `make smoke` check the initial assistant behavior separately.
 
 ## Portfolio demonstration
 
 Use a synthetic corpus containing an authentication decision record, a platform handbook, and rollout notes. Demonstrate a direct question, a follow-up, an answer that requires a second source, a conflict between document versions, and an unanswerable question. Show citations and measured results against the baseline retrieval system.
 
-All features above describe planned behavior. Runnable setup instructions, screenshots, CI results, and benchmark results will be added when those artifacts exist.
+The knowledge retrieval and portfolio demonstration features remain planned.
+The initial assistant setup above is separate from those milestones; deterministic
+application checks do not establish retrieval quality or live-model benchmarks.

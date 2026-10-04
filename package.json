@@ -1,20 +1,20 @@
 {
-  "name": "context-mesh-quality",
+  "name": "context-mesh",
   "private": true,
-  "description": "Development quality gates for the planned ContextMesh application",
+  "description": "ContextMesh workspace and shared development tooling",
   "type": "module",
   "engines": {
     "node": ">=24"
   },
+  "workspaces": ["frontend"],
   "scripts": {
     "quality:js": "eslint . --max-warnings 0",
-    "quality:test:js": "node --test tests/javascript_quality/*.test.mjs"
+    "quality:test:js": "node --test --test-isolation=none tools/quality/tests/javascript/*.test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "eslint": "10.12.0",
     "globals": "17.13.0",
-    "typescript": "5.9.3",
     "typescript-eslint": "8.71.0"
   }
 }

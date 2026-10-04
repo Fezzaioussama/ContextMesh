@@ -1,0 +1,63 @@
+name: contextmesh
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: contextmesh
+      POSTGRES_PASSWORD: contextmesh
+      POSTGRES_DB: contextmesh
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U contextmesh -d contextmesh"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      CONTEXTMESH_DATABASE_URL: postgresql+psycopg://contextmesh:contextmesh@postgres:5432/contextmesh
+      CONTEXTMESH_DEV_SUBJECT: "${CONTEXTMESH_DEV_SUBJECT:-local-user}"
+      CONTEXTMESH_DEV_WORKSPACE_ID: "${CONTEXTMESH_DEV_WORKSPACE_ID:-00000000-0000-0000-0000-000000000001}"
+      CONTEXTMESH_ALLOWED_ORIGINS: '${CONTEXTMESH_ALLOWED_ORIGINS:-["http://localhost:5173","http://127.0.0.1:5173"]}'
+      CONTEXTMESH_PROVIDER_TIMEOUT_SECONDS: "${CONTEXTMESH_PROVIDER_TIMEOUT_SECONDS:-45}"
+      CONTEXTMESH_TURN_LEASE_SECONDS: "${CONTEXTMESH_TURN_LEASE_SECONDS:-90}"
+      CONTEXTMESH_MAX_OUTPUT_TOKENS: "${CONTEXTMESH_MAX_OUTPUT_TOKENS:-1024}"
+      CONTEXTMESH_MODEL_PROVIDER: "${CONTEXTMESH_MODEL_PROVIDER:-openai}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_MODEL: "${OPENAI_MODEL:-gpt-4.1-mini}"
+      OPENAI_BASE_URL: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      OPENROUTER_MODEL: "${OPENROUTER_MODEL:-openai/gpt-4.1-mini}"
+      OPENROUTER_BASE_URL: "${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}"
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    environment:
+      CONTEXTMESH_API_PROXY_TARGET: http://api:8000
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
