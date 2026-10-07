@@ -3,6 +3,26 @@
 .env.*
 !.env.example
 !.env.*.example
+.aws/
+.gnupg/
+.ssh/
+.netrc
+.npmrc
+.pypirc
+credentials.json
+service-account*.json
+service_account*.json
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.kdbx
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
 
 # Python
 .venv/
