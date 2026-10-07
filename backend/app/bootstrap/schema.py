@@ -17,7 +17,7 @@ from app.db.models.knowledge import (
 )
 from app.db.models.user import memberships, workspaces
 
-SCHEMA_REVISION = "0003_consulted_documents"
+SCHEMA_REVISION = "0004_formats_and_websites"
 REQUIRED_TABLES = frozenset({"alembic_version", *metadata.tables})
 
 __all__ = [

@@ -7,10 +7,9 @@ from sqlalchemy import Connection, Engine, RowMapping, insert, select, update
 
 from app.core.exceptions import unavailable_resource
 from app.core.security import Identity
-from app.db.models.knowledge import document_versions, documents, jobs, sources
+from app.db.models.knowledge import documents, jobs, sources
 from app.db.repositories.access import require_membership
 from app.db.repositories.document_records import (
-    INDEX_JOB,
     document_summary,
     documents_in_source,
     source_listing,
@@ -18,28 +17,32 @@ from app.db.repositories.document_records import (
 )
 from app.db.repositories.job_repository import enqueue, job_value
 from app.db.repositories.knowledge_access import require_document, require_editor, require_source
-from app.domain.knowledge import DocumentSummary, JobView, Source, UploadReceipt
+from app.db.repositories.version_records import record_version
+from app.domain.errors import wrong_source_kind
+from app.domain.knowledge import DocumentSummary, JobView, Source, SourceDraft, UploadReceipt
 from app.domain.uploads import UploadSpec
 
-RETRYABLE_STATES = ("failed", "cancelled")
+SYNC_JOB = "source.sync_requested"
+OPEN_STATES = ("queued", "running")
 
 
 class SourceRepository:
     def __init__(self, engine: Engine):
         self._engine = engine
 
-    def create(self, identity: Identity, name: str, description: str) -> Source:
+    def create(self, identity: Identity, draft: SourceDraft) -> Source:
         now = datetime.now(UTC)
-        source = Source(uuid4(), "upload", name, description, 0, 0, now)
+        source = Source(uuid4(), draft.kind, draft.name, draft.description, 0, 0, now, draft.url)
         with self._engine.begin() as connection:
             require_editor(connection, identity)
             connection.execute(
                 insert(sources).values(
                     id=source.id,
                     workspace_id=identity.workspace_id,
-                    kind=source.kind,
-                    name=name,
-                    description=description,
+                    kind=draft.kind,
+                    name=draft.name,
+                    description=draft.description,
+                    url=draft.url,
                     owner_subject=identity.subject,
                     created_at=now,
                 )
@@ -61,13 +64,23 @@ class SourceRepository:
         self, identity: Identity, source_id: UUID, spec: UploadSpec, digest: str, blob_key: str
     ) -> UploadReceipt:
         with self._engine.begin() as connection:
-            require_editor(connection, identity)
-            require_source(connection, identity, source_id, lock=True)
-            existing = _live_document(connection, source_id, spec.external_id)
-            unchanged = _unchanged_job(connection, existing, digest)
-            if unchanged is not None:
-                return UploadReceipt(document_summary(connection, existing["id"]), unchanged, True)
-            return _new_version(connection, identity, source_id, existing, spec, digest, blob_key)
+            _require_kind(_editable_source(connection, identity, source_id), "upload")
+            recorded = record_version(
+                connection, identity.workspace_id, source_id, spec, digest, blob_key
+            )
+            summary = document_summary(connection, recorded.document_id)
+            return UploadReceipt(summary, recorded.job_id, recorded.duplicate)
+
+    def request_sync(self, identity: Identity, source_id: UUID) -> UUID:
+        """At most one open crawl per source; a repeated request returns the open job."""
+        with self._engine.begin() as connection:
+            _require_kind(_editable_source(connection, identity, source_id), "website")
+            return _open_sync(connection, source_id) or enqueue(
+                connection,
+                workspace_id=identity.workspace_id,
+                kind=SYNC_JOB,
+                source_id=source_id,
+            )
 
     def delete_document(self, identity: Identity, document_id: UUID) -> UUID:
         now = datetime.now(UTC)
@@ -89,8 +102,7 @@ class SourceRepository:
 
     def delete_source(self, identity: Identity, source_id: UUID) -> UUID:
         with self._engine.begin() as connection:
-            require_editor(connection, identity)
-            require_source(connection, identity, source_id, lock=True)
+            _editable_source(connection, identity, source_id)
             connection.execute(
                 update(sources)
                 .where(sources.c.id == source_id)
@@ -115,99 +127,18 @@ class SourceRepository:
         return job_value(row)
 
 
-def _live_document(connection: Connection, source_id: UUID, external_id: str) -> RowMapping | None:
-    query = (
-        select(documents)
-        .where(
-            documents.c.source_id == source_id,
-            documents.c.external_id == external_id,
-            documents.c.deleted_at.is_(None),
-        )
-        .with_for_update()
-    )
-    return connection.execute(query).mappings().first()
+def _editable_source(connection: Connection, identity: Identity, source_id: UUID) -> RowMapping:
+    require_editor(connection, identity)
+    return require_source(connection, identity, source_id, lock=True)
 
 
-def _unchanged_job(connection: Connection, existing: RowMapping | None, digest: str) -> UUID | None:
-    """Identical content is idempotent unless its last indexing attempt did not succeed."""
-    if existing is None or existing["latest_version_id"] is None:
-        return None
-    query = (
-        select(jobs.c.id)
-        .select_from(
-            document_versions.join(jobs, jobs.c.document_version_id == document_versions.c.id)
-        )
-        .where(
-            document_versions.c.id == existing["latest_version_id"],
-            document_versions.c.content_hash == digest,
-            jobs.c.kind == INDEX_JOB,
-            jobs.c.status.not_in(RETRYABLE_STATES),
-        )
-        .order_by(jobs.c.created_at.desc())
-        .limit(1)
-    )
-    return connection.execute(query).scalar()
+def _require_kind(source: RowMapping, kind: str) -> None:
+    if source["kind"] != kind:
+        raise wrong_source_kind()
 
 
-def _new_version(
-    connection: Connection,
-    identity: Identity,
-    source_id: UUID,
-    existing: RowMapping | None,
-    spec: UploadSpec,
-    digest: str,
-    blob_key: str,
-) -> UploadReceipt:
-    now = datetime.now(UTC)
-    document_id = _document_id(connection, identity, source_id, existing, spec, now)
-    version_id = uuid4()
-    connection.execute(
-        insert(document_versions).values(
-            id=version_id,
-            document_id=document_id,
-            content_hash=digest,
-            blob_key=blob_key,
-            byte_size=spec.byte_size,
-            created_at=now,
-        )
+def _open_sync(connection: Connection, source_id: UUID) -> UUID | None:
+    query = select(jobs.c.id).where(
+        jobs.c.source_id == source_id, jobs.c.kind == SYNC_JOB, jobs.c.status.in_(OPEN_STATES)
     )
-    connection.execute(
-        update(documents)
-        .where(documents.c.id == document_id)
-        .values(latest_version_id=version_id, title=spec.title, updated_at=now)
-    )
-    job_id = enqueue(
-        connection,
-        workspace_id=identity.workspace_id,
-        kind=INDEX_JOB,
-        source_id=source_id,
-        document_id=document_id,
-        version_id=version_id,
-    )
-    return UploadReceipt(document_summary(connection, document_id), job_id, False)
-
-
-def _document_id(
-    connection: Connection,
-    identity: Identity,
-    source_id: UUID,
-    existing: RowMapping | None,
-    spec: UploadSpec,
-    now: datetime,
-) -> UUID:
-    if existing is not None:
-        return existing["id"]
-    document_id = uuid4()
-    connection.execute(
-        insert(documents).values(
-            id=document_id,
-            workspace_id=identity.workspace_id,
-            source_id=source_id,
-            external_id=spec.external_id,
-            title=spec.title,
-            media_type=spec.media_type,
-            created_at=now,
-            updated_at=now,
-        )
-    )
-    return document_id
+    return connection.execute(query.limit(1)).scalar()

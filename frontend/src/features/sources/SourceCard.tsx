@@ -1,20 +1,26 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { ChangeEvent } from "react";
 import { ApiError } from "../../api/client";
 import type { DocumentSummary, Source } from "../../api/contracts";
-import { deleteDocument, deleteSource, uploadDocument } from "../../api/knowledge";
+import {
+  deleteDocument,
+  deleteSource,
+  syncSource,
+  uploadDocument,
+} from "../../api/knowledge";
+import { ExternalLink, webUrl } from "../../components/ExternalLink";
 import { ErrorNotice } from "../../components/Feedback";
 import { Icon } from "../../components/Icon";
-import { documentStatus } from "./documentStatus";
+import { crawlStatus, documentStatus, isOpen } from "./documentStatus";
 import { useAction } from "./useAction";
 import { useDocuments } from "./useDocuments";
-
-const ACCEPTED = ".md,.markdown,.txt,text/markdown,text/plain";
+import { usePolling } from "./usePolling";
 
 interface SourceCardProps {
   source: Source;
   changed: () => void;
   maxUploadBytes: number;
+  accept: string;
 }
 
 async function uploadAll(sourceId: string, files: File[], limit: number) {
@@ -23,24 +29,27 @@ async function uploadAll(sourceId: string, files: File[], limit: number) {
   for (const file of files) await uploadDocument(sourceId, file);
 }
 
-export function SourceCard(props: SourceCardProps) {
-  const documents = useDocuments(props.source.id, props.changed);
-  const settle = () => {
-    documents.refresh();
-    props.changed();
-  };
-  const upload = useAction(
-    (files: File[]) => uploadAll(props.source.id, files, props.maxUploadBytes),
-    settle,
-  );
-  const remove = useAction(deleteDocument, settle);
-  const removeSource = useAction(deleteSource, props.changed);
+/** Polls while a crawl runs; each poll re-arms the next one until the crawl ends. */
+function useCrawlWatch(active: boolean, refresh: () => void) {
+  const [tick, setTick] = useState(0);
+  const poll = useCallback(() => {
+    refresh();
+    setTick((value) => value + 1);
+  }, [refresh]);
+  usePolling(active, tick, poll);
+}
 
-  function chosen(event: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files ?? []);
-    event.target.value = "";
-    if (files.length > 0) void upload.run(files);
-  }
+export function SourceCard(props: SourceCardProps) {
+  const { changed } = props;
+  const documents = useDocuments(props.source.id, changed);
+  const { refresh } = documents;
+  const settle = useCallback(() => {
+    refresh();
+    changed();
+  }, [refresh, changed]);
+  useCrawlWatch(isOpen(props.source.latest_sync), settle);
+  const remove = useAction(deleteDocument, settle);
+  const removeSource = useAction(deleteSource, changed);
 
   return (
     <li className="source-card">
@@ -56,12 +65,41 @@ export function SourceCard(props: SourceCardProps) {
           confirm={() => void removeSource.run(props.source.id)}
         />
       </div>
+      <SourceControls {...props} settle={settle} />
+      <ErrorNotice message={remove.error} retry={remove.clear} label="Dismiss" />
+      <ErrorNotice message={removeSource.error} retry={removeSource.clear} label="Dismiss" />
+      <ErrorNotice message={documents.error} retry={documents.refresh} />
+      <DocumentList items={documents.items} remove={(id) => void remove.run(id)} />
+    </li>
+  );
+}
+
+function SourceControls(props: SourceCardProps & { settle: () => void }) {
+  if (props.source.kind === "website")
+    return <WebsiteControls source={props.source} settle={props.settle} />;
+  return <UploadControls {...props} />;
+}
+
+function UploadControls(props: SourceCardProps & { settle: () => void }) {
+  const upload = useAction(
+    (files: File[]) => uploadAll(props.source.id, files, props.maxUploadBytes),
+    props.settle,
+  );
+
+  function chosen(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (files.length > 0) void upload.run(files);
+  }
+
+  return (
+    <>
       <label className="upload-button" data-busy={upload.pending}>
         <Icon name="upload" />
         {upload.pending ? "Uploading…" : "Upload files"}
         <input
           type="file"
-          accept={ACCEPTED}
+          accept={props.accept}
           multiple
           disabled={upload.pending}
           aria-label={`Upload files to ${props.source.name}`}
@@ -69,15 +107,29 @@ export function SourceCard(props: SourceCardProps) {
         />
       </label>
       <ErrorNotice message={upload.error} retry={upload.clear} label="Dismiss" />
-      <ErrorNotice message={remove.error} retry={remove.clear} label="Dismiss" />
-      <ErrorNotice
-        message={removeSource.error}
-        retry={removeSource.clear}
-        label="Dismiss"
-      />
-      <ErrorNotice message={documents.error} retry={documents.refresh} />
-      <DocumentList items={documents.items} remove={(id) => void remove.run(id)} />
-    </li>
+    </>
+  );
+}
+
+function WebsiteControls(props: { source: Source; settle: () => void }) {
+  const crawl = useAction(syncSource, props.settle);
+  const status = crawlStatus(props.source.latest_sync);
+  const crawling = crawl.pending || isOpen(props.source.latest_sync);
+  return (
+    <div className="website-controls">
+      <ExternalLink href={props.source.url}>{props.source.url}</ExternalLink>
+      <span className="document-status" data-tone={status.tone} role="status">
+        {status.label}
+      </span>
+      <button
+        className="text-button"
+        disabled={crawling}
+        onClick={() => void crawl.run(props.source.id)}
+      >
+        Crawl again
+      </button>
+      <ErrorNotice message={crawl.error} retry={crawl.clear} label="Dismiss" />
+    </div>
   );
 }
 
@@ -138,7 +190,7 @@ function DocumentRow(props: {
     <li className="document-row">
       <Icon name="file" />
       <div>
-        <span className="document-title">{props.document.title}</span>
+        <DocumentTitle document={props.document} />
         <span className="document-status" data-tone={status.tone} role="status">
           {status.label}
         </span>
@@ -151,5 +203,15 @@ function DocumentRow(props: {
         <Icon name="trash" />
       </button>
     </li>
+  );
+}
+
+function DocumentTitle({ document }: { document: DocumentSummary }) {
+  if (webUrl(document.uri) === null)
+    return <span className="document-title">{document.title}</span>;
+  return (
+    <span className="document-title">
+      <ExternalLink href={document.uri}>{document.title}</ExternalLink>
+    </span>
   );
 }

@@ -34,7 +34,11 @@ def list_sources(service: Service, identity: Principal) -> dict[str, tuple[Sourc
 
 
 def create_source(body: CreateSource, service: Service, identity: Principal) -> Source:
-    return service.create(identity, body.name, body.description)
+    return service.create(identity, body.name, body.description, body.url)
+
+
+def sync_source(source_id: UUID, service: Service, identity: Principal) -> AcceptedJob:
+    return AcceptedJob(job_id=service.sync(identity, source_id))
 
 
 def delete_source(source_id: UUID, service: Service, identity: Principal) -> AcceptedJob:
@@ -97,6 +101,13 @@ def knowledge_router() -> APIRouter:
         "/sources/{source_id}",
         delete_source,
         methods=["DELETE"],
+        status_code=202,
+        response_model=AcceptedJob,
+    )
+    router.add_api_route(
+        "/sources/{source_id}/sync",
+        sync_source,
+        methods=["POST"],
         status_code=202,
         response_model=AcceptedJob,
     )

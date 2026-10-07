@@ -16,7 +16,7 @@ export const agent: AgentMetadata = {
   embedding_model: "text-embedding-3-small",
   configured: true,
   retrieval_enabled: true,
-  supported_media_types: [".md", ".markdown", ".txt"],
+  supported_media_types: [".md", ".pdf", ".docx", ".txt"],
   limits: {
     max_message_chars: 8000,
     max_history_messages: 20,
@@ -46,8 +46,10 @@ export const handbook: Source = {
   kind: "upload",
   name: "Handbook",
   description: "Platform handbook",
+  url: null,
   document_count: 1,
   searchable_count: 1,
+  latest_sync: null,
   created_at: "2026-10-03T12:00:00Z",
 };
 export const decisions: Source = {
@@ -80,6 +82,7 @@ export function documentSummary(
     searchable: true,
     chunk_count: 3,
     latest_job: indexJob(),
+    uri: null,
     updated_at: "2026-10-03T12:00:00Z",
     ...overrides,
   };
@@ -100,8 +103,15 @@ export const groundedAnswer: Answer = {
       index_generation_id: "generation",
       chunk_id: "chunk",
       title: "auth.md",
-      locator: { heading_path: ["Auth", "Decision"], line_start: 3, line_end: 4 },
+      locator: {
+        heading_path: ["Auth", "Decision"],
+        line_start: 3,
+        line_end: 4,
+        page: null,
+        slide: null,
+      },
       snippet: "We use OIDC with a central identity provider.",
+      source_url: null,
       evidence_path: "/api/v1/documents/doc/versions/version/evidence?chunk_id=chunk",
     },
   ],

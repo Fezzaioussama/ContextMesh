@@ -15,7 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 def resources(monkeypatch):
     engine = Mock(spec=Engine)
     model = Mock()
-    services = ExternalServices(Mock(), Mock(), Mock())
+    services = ExternalServices(Mock(), Mock(), Mock(), Mock())
 
     def create(config, stack):
         stack.callback(model.close)
@@ -39,7 +39,7 @@ def test_owned_provider_and_database_close_after_shutdown(resources):
 
 def test_injected_provider_lifetime_belongs_to_caller(resources):
     settings, engine, model, factory = resources
-    with TestClient(api.create_app(settings, ExternalServices(Mock(), Mock(), Mock()))):
+    with TestClient(api.create_app(settings, ExternalServices(Mock(), Mock(), Mock(), Mock()))):
         pass
     factory.assert_not_called()
     model.close.assert_not_called()

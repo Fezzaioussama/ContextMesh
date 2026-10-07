@@ -5,11 +5,11 @@
 An extensible Agentic RAG platform for conversational search across documents, websites and enterprise data sources.
 
 **Project status:** the first agentic retrieval slice works end to end. Upload
-Markdown or text files into sources; a separate worker parses, chunks, embeds, and
-publishes them. The **ContextMesh Agent** plans which sources to search, runs
+documents (PDF, Word, PowerPoint, Excel, HTML, Markdown, text, data and code files)
+or crawl a website; a separate worker parses, chunks, embeds, and publishes them. The **ContextMesh Agent** plans which sources to search, runs
 hybrid retrieval, expands or reformulates the search when evidence is missing, and
-returns claims with verified citations — or an explicit evidence gap. Website and
-PDF/Office ingestion, streaming, and the evaluation benchmark remain planned.
+returns claims with verified citations — or an explicit evidence gap. OCR for
+scanned documents, streaming, and the evaluation benchmark remain planned.
 
 Suggested GitHub repository name: `context-mesh`.
 
@@ -24,8 +24,32 @@ make dev
 This creates `.env` from [.env.example](.env.example) only if it does not already
 exist, applies database migrations, and starts the frontend, API, ingestion worker,
 PostgreSQL, and Qdrant. Open [http://localhost:5173](http://localhost:5173), choose
-**Sources**, create a source, and upload `.md`, `.markdown`, or `.txt` files. When a
-document shows **Ready**, ask a question. API documentation is at
+**Sources**, and create either a **Files** source (then upload documents) or a
+**Website** source (give a start URL; it is crawled immediately). When documents show
+**Ready**, ask a question.
+
+### What you can add
+
+| Kind | Formats | Citations point to |
+| --- | --- | --- |
+| Documents | PDF (with a text layer), Word `.docx`, PowerPoint `.pptx`, Excel `.xlsx` | page, heading path, slide, or sheet |
+| Web and markup | HTML `.html`/`.htm`, Markdown `.md` | heading path and source lines |
+| Text, data, code | `.txt`, `.csv`, `.json`, `.yaml`, `.xml`, `.log`, `.rst`, `.sql`, and common code files | source lines |
+| Websites | A start URL; pages under the same path are crawled | the page URL and heading |
+
+Scanned PDFs without a text layer are reported as **OCR required**; legacy `.doc`,
+`.ppt`, and `.xls` files and images are not supported. Uploads are limited to 20 MB
+by default (`CONTEXTMESH_MAX_UPLOAD_BYTES`). Office files are checked for
+decompression bombs before they are opened.
+
+Website crawls stay on the start URL's scheme, host, and directory, respect
+`robots.txt`, follow links up to `CONTEXTMESH_CRAWL_MAX_DEPTH` (default 2) and at most
+`CONTEXTMESH_CRAWL_MAX_PAGES` pages (default 50), and fetch only HTML, text, Markdown,
+and PDF. Every connection — including each redirect — is checked at connect time:
+private, loopback, link-local, and cloud-metadata addresses and non-web ports are
+refused, so a crawl cannot reach internal services. **Crawl again** re-fetches the
+site; unchanged pages are skipped, and pages that disappeared are retired only when
+the crawl completed without limits or transient errors. API documentation is at
 [http://localhost:8000/docs](http://localhost:8000/docs).
 
 The selected provider's key is used for both the reasoning model and embeddings.
@@ -36,11 +60,13 @@ CONTEXTMESH_MODEL_PROVIDER=openrouter
 OPENROUTER_API_KEY=your-openrouter-key
 OPENROUTER_MODEL=openai/gpt-4.1-mini
 OPENROUTER_EMBEDDING_MODEL=openai/text-embedding-3-small
-CONTEXTMESH_MAX_OUTPUT_TOKENS=4096
+CONTEXTMESH_MAX_OUTPUT_TOKENS=8192
 ```
 
 Reasoning models (for example DeepSeek) spend hidden reasoning tokens inside the
-output budget; keep `CONTEXTMESH_MAX_OUTPUT_TOKENS` at 4096 for them. If a reply
+output budget — measured at up to several thousand per agent step — so keep
+`CONTEXTMESH_MAX_OUTPUT_TOKENS` at 8192 (the maximum is 16384; it is a ceiling,
+not a charge). If a reply
 runs out of budget, the API returns `model_output_limit` rather than a partial
 answer. For direct OpenAI access, set `CONTEXTMESH_MODEL_PROVIDER=openai`,
 `OPENAI_API_KEY`, `OPENAI_MODEL`, and optionally `OPENAI_EMBEDDING_MODEL`
@@ -115,7 +141,7 @@ Today those sources are uploaded Markdown and text files. Web pages, PDF/Office 
 
 1. **Plan** — the model sees only the authorized source catalog and proposes sources and up to two queries; the server drops unknown IDs and never widens an explicit source filter.
 2. **Retrieve** — Qdrant vector search and PostgreSQL full-text search run in scope, ranks are fused (RRF), and only chunks from live, published document versions are hydrated.
-3. **Assess and expand** — the model judges coverage; missing facts trigger reformulated queries or additional sources, bounded to three rounds, a 60,000-token budget, and a 60-second deadline that is checked before every model call and retrieval round (an operation already in progress can run until its own provider timeout).
+3. **Assess and expand** — the model judges coverage; missing facts trigger reformulated queries or additional sources, bounded to three rounds, a 60,000-token budget, and a 75-second deadline that also caps every model call's total duration.
 4. **Answer and verify** — claims may cite only supplied passages; a separate support check flags unsupported claims, which get one repair and are then removed.
 5. **Release** — citations are built from canonical records, re-checked for visibility, and saved; a saved answer is withheld if any document it cited or consulted is later deleted.
 

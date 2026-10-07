@@ -103,7 +103,12 @@ def _fits_group(group: list[Element], piece: Element, policy: ChunkingPolicy) ->
 
 
 def _starts_section(groups: list[list[Element]], piece: Element) -> bool:
-    return not groups or groups[-1][-1].heading_path != piece.heading_path
+    return not groups or _position(groups[-1][-1]) != _position(piece)
+
+
+def _position(element: Element) -> tuple:
+    """Chunks never span headings, pages, or slides, so each citation has one place."""
+    return (element.heading_path, element.page, element.slide)
 
 
 def _tokens(group: list[Element]) -> int:
@@ -123,10 +128,13 @@ def _overlap(current: list[Element], piece: Element, policy: ChunkingPolicy) -> 
 
 def _draft(group: list[Element], ordinal: int, seed: str) -> ChunkDraft:
     text = "\n\n".join(element.text for element in group)
+    first = group[0]
     locator = Locator(
-        group[0].heading_path,
+        first.heading_path,
         min(element.line_start for element in group),
         max(element.line_end for element in group),
+        first.page,
+        first.slide,
     )
     chunk_id = uuid5(CHUNK_NAMESPACE, f"{seed}:{ordinal}")
     return ChunkDraft(chunk_id, ordinal, text, locator, estimate_tokens(text))

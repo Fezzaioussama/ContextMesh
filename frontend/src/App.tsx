@@ -18,11 +18,16 @@ import { SourcesPanel } from "./features/sources/SourcesPanel";
 import { useSources } from "./features/sources/useSources";
 import type { SourcesState } from "./features/sources/useSources";
 
-const DEFAULT_UPLOAD_LIMIT = 2_000_000;
+const DEFAULT_UPLOAD_LIMIT = 20_000_000;
 
 function uploadLimit(agent: AgentMetadata | null): number {
   if (agent === null) return DEFAULT_UPLOAD_LIMIT;
   return agent.limits.max_upload_bytes;
+}
+
+function acceptedTypes(agent: AgentMetadata | null): string {
+  if (agent === null) return "";
+  return agent.supported_media_types.join(",");
 }
 
 export function App() {
@@ -122,6 +127,7 @@ export function App() {
         close={closeSources}
         sources={sources}
         maxUploadBytes={uploadLimit(metadata.agent)}
+        accept={acceptedTypes(metadata.agent)}
       />
     </div>
   );
@@ -142,7 +148,8 @@ function SourcesHint({ sources, open }: { sources: SourcesState; open: () => voi
       <div>
         <strong>Add documents to get cited answers</strong>
         <p>
-          Upload Markdown or text files. Until something is indexed, the agent
+          Upload files (PDF, Office, HTML, Markdown, text) or add a website.
+          Until something is indexed, the agent
           reports an evidence gap instead of guessing.
         </p>
       </div>

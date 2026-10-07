@@ -3,8 +3,7 @@ import { describeError } from "../../api/client";
 import type { DocumentSummary } from "../../api/contracts";
 import { sourceDocuments } from "../../api/knowledge";
 import { isPending } from "./documentStatus";
-
-const POLL_MS = 1500;
+import { usePolling } from "./usePolling";
 
 export function useDocuments(sourceId: string, onSettled: () => void) {
   const [items, setItems] = useState<DocumentSummary[]>([]);
@@ -31,15 +30,6 @@ export function useDocuments(sourceId: string, onSettled: () => void) {
   usePolling(pending, revision, refresh);
   useSettled(pending, onSettled);
   return { items, error, pending, refresh };
-}
-
-/** Reloads while indexing is in progress; stops once every job has settled. */
-function usePolling(active: boolean, revision: number, refresh: () => void) {
-  useEffect(() => {
-    if (!active) return;
-    const timer = window.setTimeout(refresh, POLL_MS);
-    return () => window.clearTimeout(timer);
-  }, [active, revision, refresh]);
 }
 
 function useSettled(pending: boolean, onSettled: () => void) {

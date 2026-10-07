@@ -10,6 +10,7 @@ interface SourcesPanelProps {
   close: () => void;
   sources: SourcesState;
   maxUploadBytes: number;
+  accept: string;
 }
 
 export function SourcesPanel(props: SourcesPanelProps) {
@@ -40,6 +41,7 @@ export function SourcesPanel(props: SourcesPanelProps) {
         loading={props.sources.loading}
         changed={props.sources.refresh}
         maxUploadBytes={props.maxUploadBytes}
+        accept={props.accept}
       />
     </aside>
   );
@@ -50,6 +52,7 @@ interface SourceListProps {
   loading: boolean;
   changed: () => void;
   maxUploadBytes: number;
+  accept: string;
 }
 
 function SourceList(props: SourceListProps) {
@@ -57,8 +60,9 @@ function SourceList(props: SourceListProps) {
   if (props.items.length === 0)
     return (
       <p className="sources-empty">
-        Create a source, then upload Markdown or text files. Indexed passages
-        become searchable evidence.
+        Create a source, then upload files (PDF, Word, PowerPoint, Excel, HTML,
+        Markdown, text) or crawl a website. Indexed passages become searchable
+        evidence.
       </p>
     );
   return (
@@ -69,6 +73,7 @@ function SourceList(props: SourceListProps) {
           source={source}
           changed={props.changed}
           maxUploadBytes={props.maxUploadBytes}
+          accept={props.accept}
         />
       ))}
     </ul>

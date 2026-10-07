@@ -7,16 +7,38 @@ from pathlib import PurePosixPath, PureWindowsPath
 from app.core.exceptions import invalid_input
 from app.domain.errors import payload_too_large, unsupported_media_type
 
-MEDIA_TYPES = {".md": "text/markdown", ".markdown": "text/markdown", ".txt": "text/plain"}
+PDF = "application/pdf"
+DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+TEXT_EXTENSIONS = (
+    ".txt .text .log .rst .adoc .csv .tsv .json .jsonl .xml .yaml .yml .toml .ini .cfg "
+    ".conf .sql .py .js .jsx .ts .tsx .java .kt .go .rs .c .h .cpp .hpp .cs .rb .php "
+    ".swift .scala .sh .ps1 .css .scss .graphql .proto .tex .srt .vtt"
+).split()
+MEDIA_TYPES = {
+    ".md": "text/markdown",
+    ".markdown": "text/markdown",
+    ".html": "text/html",
+    ".htm": "text/html",
+    ".pdf": PDF,
+    ".docx": DOCX,
+    ".pptx": PPTX,
+    ".xlsx": XLSX,
+    **dict.fromkeys(TEXT_EXTENSIONS, "text/plain"),
+}
 CONTROL_CHARACTERS = re.compile(r"[\x00-\x1f\x7f]")
 
 
 @dataclass(frozen=True)
 class UploadSpec:
+    """A document to version: an uploaded file, or a crawled page identified by URL."""
+
     title: str
     external_id: str
     media_type: str
     byte_size: int
+    uri: str | None = None
 
 
 def normalized_source_name(name: str) -> str:

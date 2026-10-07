@@ -17,7 +17,7 @@ from app.services.ports.ingestion import (
 from app.services.ports.models import EmbeddingModel
 from app.services.ports.sources import BlobStore
 
-PARSER_REVISION = "parser-v1"
+PARSER_REVISION = "parser-v2"
 logger = logging.getLogger("context_mesh.worker")
 
 

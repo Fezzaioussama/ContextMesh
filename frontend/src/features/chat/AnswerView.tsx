@@ -8,6 +8,7 @@ import type {
 } from "../../api/contracts";
 import { describeError } from "../../api/client";
 import { evidence } from "../../api/knowledge";
+import { ExternalLink } from "../../components/ExternalLink";
 
 const statusLabels: Record<AnswerStatus, string> = {
   answered: "Grounded answer",
@@ -114,10 +115,18 @@ function CitationList(props: {
   );
 }
 
+/** Pages and slides for documents; source lines only where they help (text files). */
+function position(citation: Citation): string {
+  const { locator } = citation;
+  if (locator.page !== null) return `page ${locator.page}`;
+  if (locator.slide !== null) return `slide ${locator.slide}`;
+  if (citation.source_url !== null) return "";
+  return `lines ${locator.line_start}–${locator.line_end}`;
+}
+
 function location(citation: Citation): string {
-  const section = citation.locator.heading_path.join(" › ");
-  const lines = `lines ${citation.locator.line_start}–${citation.locator.line_end}`;
-  return section.length > 0 ? `${section} · ${lines}` : lines;
+  const parts = [citation.locator.heading_path.join(" › "), position(citation)];
+  return parts.filter((part) => part.length > 0).join(" · ");
 }
 
 function CitationItem({ citation, id }: { citation: Citation; id: string }) {
@@ -128,6 +137,7 @@ function CitationItem({ citation, id }: { citation: Citation; id: string }) {
         <strong>{citation.title}</strong>
         <span className="citation-location">{location(citation)}</span>
         <blockquote>{citation.snippet}</blockquote>
+        <ExternalLink href={citation.source_url}>Open page ↗</ExternalLink>
         <PassageLoader path={citation.evidence_path} />
       </div>
     </li>

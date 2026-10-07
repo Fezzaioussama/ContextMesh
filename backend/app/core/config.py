@@ -57,7 +57,19 @@ class Settings(BaseSettings):
         default=BACKEND.parent / ".data" / "blobs", validation_alias="CONTEXTMESH_BLOB_DIR"
     )
     max_upload_bytes: int = Field(
-        default=2_000_000, ge=1, le=10_000_000, validation_alias="CONTEXTMESH_MAX_UPLOAD_BYTES"
+        default=20_000_000, ge=1, le=50_000_000, validation_alias="CONTEXTMESH_MAX_UPLOAD_BYTES"
+    )
+    crawl_max_pages: int = Field(
+        default=50, ge=1, le=500, validation_alias="CONTEXTMESH_CRAWL_MAX_PAGES"
+    )
+    crawl_max_depth: int = Field(
+        default=2, ge=0, le=5, validation_alias="CONTEXTMESH_CRAWL_MAX_DEPTH"
+    )
+    web_timeout_seconds: float = Field(
+        default=10, gt=0, le=30, validation_alias="CONTEXTMESH_WEB_TIMEOUT_SECONDS"
+    )
+    web_max_page_bytes: int = Field(
+        default=5_000_000, ge=1, le=20_000_000, validation_alias="CONTEXTMESH_WEB_MAX_PAGE_BYTES"
     )
     dev_subject: str = Field(
         default="local-user",
@@ -77,10 +89,10 @@ class Settings(BaseSettings):
         default=45, gt=0, le=45, validation_alias="CONTEXTMESH_PROVIDER_TIMEOUT_SECONDS"
     )
     max_output_tokens: int = Field(
-        default=4096, ge=1, le=4096, validation_alias="CONTEXTMESH_MAX_OUTPUT_TOKENS"
+        default=8192, ge=1, le=16384, validation_alias="CONTEXTMESH_MAX_OUTPUT_TOKENS"
     )
     agent_deadline_seconds: float = Field(
-        default=60, ge=10, le=300, validation_alias="CONTEXTMESH_AGENT_DEADLINE_SECONDS"
+        default=75, ge=10, le=300, validation_alias="CONTEXTMESH_AGENT_DEADLINE_SECONDS"
     )
     turn_lease_seconds: int = Field(
         default=90, gt=0, le=3600, validation_alias="CONTEXTMESH_TURN_LEASE_SECONDS"
@@ -126,11 +138,21 @@ class Settings(BaseSettings):
         return value.strip()
 
     @model_validator(mode="after")
-    def validated_lease(self):
+    def validated_turn_lease(self):
         if self.turn_lease_seconds <= self.provider_timeout_seconds:
             raise ValueError("Turn lease must exceed the provider timeout.")
         if self.turn_lease_seconds <= self.agent_deadline_seconds:
             raise ValueError("Turn lease must exceed the agent deadline.")
+        return self
+
+    @model_validator(mode="after")
+    def validated_job_lease(self):
+        """A worker heartbeats between pages; the fetches before the first must fit."""
         if self.job_lease_seconds <= self.provider_timeout_seconds:
             raise ValueError("Job lease must exceed the provider timeout.")
+        if self.job_lease_seconds <= 6 * self.web_timeout_seconds:
+            raise ValueError(
+                "Job lease must exceed three page fetches (six times the web timeout): "
+                "robots.txt, the start page, and robots.txt again after a redirect."
+            )
         return self

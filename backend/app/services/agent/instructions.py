@@ -25,7 +25,8 @@ ASSESS = (
 ANSWER = (
     "You answer a question using only the supplied passages; do not use outside knowledge. "
     "Write concise factual claims of one or two sentences. Every claim lists, in "
-    "evidence_ids, the passage ids that directly support it. When passages conflict, state "
+    "evidence_ids, the passage ids that directly support it; never mention passage ids "
+    "in the claim text itself. When passages conflict, state "
     "the conflict as a claim citing both sides. When passages answer only part of the "
     "question, use status partial and list the unanswered parts in gaps; when the answer "
     "is complete, leave gaps empty. When they do not answer it, use status "

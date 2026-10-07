@@ -154,13 +154,15 @@ def _citation_row(message_id: UUID, citation: Citation) -> dict[str, object]:
             "heading_path": list(citation.locator.heading_path),
             "line_start": citation.locator.line_start,
             "line_end": citation.locator.line_end,
+            "page": citation.locator.page,
+            "slide": citation.locator.slide,
         },
         "snippet": citation.snippet,
+        "source_url": citation.source_url,
     }
 
 
 def _citation(row: RowMapping) -> Citation:
-    locator = row["locator"]
     return Citation(
         f"citation-{row['number']}",
         row["number"],
@@ -170,6 +172,17 @@ def _citation(row: RowMapping) -> Citation:
         row["index_generation_id"],
         row["chunk_id"],
         row["title"],
-        Locator(tuple(locator["heading_path"]), locator["line_start"], locator["line_end"]),
+        _locator(row["locator"]),
         row["snippet"],
+        row["source_url"],
+    )
+
+
+def _locator(stored: dict) -> Locator:
+    return Locator(
+        tuple(stored["heading_path"]),
+        stored["line_start"],
+        stored["line_end"],
+        stored.get("page"),
+        stored.get("slide"),
     )

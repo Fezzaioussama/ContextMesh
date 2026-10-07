@@ -30,6 +30,8 @@ export interface Locator {
   heading_path: string[];
   line_start: number;
   line_end: number;
+  page: number | null;
+  slide: number | null;
 }
 
 export interface Citation {
@@ -43,6 +45,7 @@ export interface Citation {
   title: string;
   locator: Locator;
   snippet: string;
+  source_url: string | null;
   evidence_path: string;
 }
 
@@ -97,11 +100,13 @@ export interface CompletedTurn {
 
 export interface Source {
   id: string;
-  kind: "upload";
+  kind: "upload" | "website";
   name: string;
   description: string;
+  url: string | null;
   document_count: number;
   searchable_count: number;
+  latest_sync: Job | null;
   created_at: string;
 }
 
@@ -130,6 +135,7 @@ export interface DocumentSummary {
   searchable: boolean;
   chunk_count: number;
   latest_job: Job | null;
+  uri: string | null;
   updated_at: string;
 }
 
@@ -145,6 +151,7 @@ export interface Evidence {
   title: string;
   locator: Locator;
   text: string;
+  uri: string | null;
 }
 
 export interface SafeErrorBody {

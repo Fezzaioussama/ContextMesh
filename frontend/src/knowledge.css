@@ -391,6 +391,45 @@
   color: #3f5851;
 }
 
+.kind-choice {
+  display: flex;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.kind-choice legend {
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 550;
+  color: #3f5851;
+}
+.source-form .kind-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 450;
+}
+.website-controls {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0 4px;
+  font-size: 11px;
+}
+.website-controls .text-button {
+  justify-self: start;
+}
+.external-link {
+  color: #1f6f61;
+  overflow-wrap: anywhere;
+  text-underline-offset: 2px;
+}
+.citation .external-link {
+  display: inline-block;
+  margin: 4px 12px 0 0;
+  font-size: 10px;
+}
+
 @media (max-width: 760px) {
   .sources-button {
     padding: 6px 8px;

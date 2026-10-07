@@ -12,6 +12,15 @@ class IngestionFailure(Exception):
         self.retryable = retryable
 
 
+class FetchFailure(Exception):
+    """A web fetch outcome with a safe code; never carries response content."""
+
+    def __init__(self, code: str, retryable: bool = False):
+        super().__init__(code)
+        self.code = code
+        self.retryable = retryable
+
+
 class LeaseLost(Exception):
     """The worker no longer owns the job's fencing token and must stop writing."""
 
@@ -22,7 +31,15 @@ class VectorIndexUnavailable(Exception):
 
 def unsupported_media_type() -> ContextMeshError:
     return ContextMeshError(
-        "unsupported_media_type", "Upload Markdown (.md, .markdown) or plain text (.txt) files."
+        "unsupported_media_type",
+        "This file type is not supported. Use PDF, Word, PowerPoint, Excel, HTML, "
+        "Markdown, or a text-based format.",
+    )
+
+
+def wrong_source_kind() -> ContextMeshError:
+    return ContextMeshError(
+        "wrong_source_kind", "This operation is not available for this kind of source."
     )
 
 

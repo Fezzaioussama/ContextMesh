@@ -4,12 +4,19 @@ from typing import Protocol
 from uuid import UUID
 
 from app.core.security import Identity
-from app.domain.knowledge import DocumentSummary, JobView, Passage, Source, UploadReceipt
+from app.domain.knowledge import (
+    DocumentSummary,
+    JobView,
+    Passage,
+    Source,
+    SourceDraft,
+    UploadReceipt,
+)
 from app.domain.uploads import UploadSpec
 
 
 class SourceStore(Protocol):
-    def create(self, identity: Identity, name: str, description: str) -> Source: ...
+    def create(self, identity: Identity, draft: SourceDraft) -> Source: ...
 
     def sources(self, identity: Identity) -> tuple[Source, ...]: ...
 
@@ -18,6 +25,8 @@ class SourceStore(Protocol):
     def register_upload(
         self, identity: Identity, source_id: UUID, spec: UploadSpec, digest: str, blob_key: str
     ) -> UploadReceipt: ...
+
+    def request_sync(self, identity: Identity, source_id: UUID) -> UUID: ...
 
     def delete_document(self, identity: Identity, document_id: UUID) -> UUID: ...
 

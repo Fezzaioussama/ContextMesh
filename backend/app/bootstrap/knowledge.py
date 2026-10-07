@@ -8,11 +8,14 @@ from sqlalchemy import Engine
 
 from app.bootstrap.services import ExternalServices
 from app.core.config import Settings
+from app.db.repositories.crawl_repository import CrawlRepository
 from app.db.repositories.indexing_repository import IndexingRepository
 from app.db.repositories.job_repository import JobRepository
 from app.db.repositories.retrieval_repository import RetrievalRepository
 from app.db.repositories.source_repository import SourceRepository
-from app.parsers.blocks import default_parsers
+from app.parsers.html import HtmlPageReader
+from app.parsers.registry import default_parsers
+from app.services.ingestion.crawler import CrawlPolicy, SiteCrawler
 from app.services.ingestion.erasers import DocumentEraser, SourceEraser
 from app.services.ingestion.indexer import DocumentIndexer
 from app.services.ingestion.worker import IngestionWorker
@@ -38,7 +41,16 @@ def ingestion_worker(
     indexer = DocumentIndexer(
         jobs, store, blobs, default_parsers(), services.embeddings, services.vectors
     )
+    crawler = SiteCrawler(
+        jobs,
+        CrawlRepository(engine),
+        services.fetcher,
+        HtmlPageReader(),
+        blobs,
+        CrawlPolicy(config.crawl_max_pages, config.crawl_max_depth),
+    )
     handlers = {
+        "source.sync_requested": crawler,
         "document.index_requested": indexer,
         "document.delete_requested": DocumentEraser(jobs, store, blobs, services.vectors),
         "source.delete_requested": SourceEraser(jobs, store, blobs, services.vectors),

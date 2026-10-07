@@ -186,7 +186,7 @@ describe("knowledge sources", () => {
     fireEvent.change(screen.getByLabelText("Source name"), { target: { value: "Team docs" } });
     fireEvent.click(screen.getByRole("button", { name: "Add source" }));
     await waitFor(() => expect(posts).toHaveLength(1));
-    expect(JSON.parse(String(posts[0].init.body))).toEqual({ name: "Team docs", description: "" });
+    expect(JSON.parse(String(posts[0].init.body))).toEqual({ name: "Team docs", description: "", url: null });
     const file = new File(["# Auth\n\nWe use OIDC."], "auth.md", { type: "text/markdown" });
     fireEvent.change(screen.getByLabelText("Upload files to Handbook"), { target: { files: [file] } });
     await waitFor(() => expect(posts).toHaveLength(2));

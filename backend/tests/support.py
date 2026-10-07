@@ -9,9 +9,11 @@ from uuid import uuid4
 
 from app.bootstrap.services import ExternalServices, collection_name
 from app.domain.answers import Answer, TraceStage
+from app.domain.errors import FetchFailure
 from app.domain.models import AgentOutcome, Usage
 from app.search.qdrant import QdrantVectorIndex
 from app.services.ports.models import StructuredReply, StructuredTask
+from app.services.ports.web import FetchedPage
 from qdrant_client import QdrantClient
 
 ROOT = "/api/v1/assistant"
@@ -106,13 +108,35 @@ class ScriptedReasoning:
         return [json.loads(task.content) for task in self.tasks if task.name == name]
 
 
-def memory_services() -> tuple[ExternalServices, ScriptedReasoning, HashEmbeddings]:
+class FixtureWeb:
+    """Serves registered pages by URL; anything else is a 404. Records each request."""
+
+    def __init__(self):
+        self.pages: dict[str, FetchedPage | FetchFailure] = {}
+        self.requests: list[str] = []
+
+    def serve(self, url: str, body: str, media_type: str = "text/html") -> None:
+        self.pages[url] = FetchedPage(url, media_type, body.encode())
+
+    def fail(self, url: str, failure: FetchFailure) -> None:
+        self.pages[url] = failure
+
+    def fetch(self, url: str) -> FetchedPage:
+        self.requests.append(url)
+        outcome = self.pages.get(url, FetchFailure("not_found"))
+        if isinstance(outcome, FetchFailure):
+            raise outcome
+        return outcome
+
+
+def memory_services() -> tuple[ExternalServices, ScriptedReasoning, HashEmbeddings, FixtureWeb]:
     reasoning = ScriptedReasoning()
     embeddings = HashEmbeddings()
     vectors = QdrantVectorIndex(
         QdrantClient(location=":memory:"), collection_name(embeddings.identity)
     )
-    return ExternalServices(reasoning, embeddings, vectors), reasoning, embeddings
+    web = FixtureWeb()
+    return ExternalServices(reasoning, embeddings, vectors, web), reasoning, embeddings, web
 
 
 def drain(worker, limit=20):

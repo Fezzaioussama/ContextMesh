@@ -36,9 +36,10 @@ const errorMessages: Record<string, string> = {
     "This item is unavailable. Refresh, then select another conversation or source.",
   forbidden: "Your role does not permit changing sources.",
   unsupported_media_type:
-    "Upload Markdown (.md, .markdown) or plain text (.txt) files.",
+    "This file type is not supported. Upload PDF, Word, PowerPoint, Excel, HTML, Markdown, or text files.",
   payload_too_large: "This file is larger than the server's upload limit.",
   invalid_input: "Check your input and try again.",
+  wrong_source_kind: "That action does not apply to this kind of source.",
 };
 
 export class ApiError extends Error {

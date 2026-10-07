@@ -2,7 +2,9 @@
 
 import json
 import re
+import threading
 
+import httpx
 from openai import OpenAI, OpenAIError
 
 from app.domain.errors import (
@@ -52,12 +54,16 @@ class OpenAIReasoningModel:
             raise provider_not_configured()
         try:
             response = self._request(task)
-        except (OpenAIError, ValueError):
+        except (OpenAIError, ValueError, httpx.HTTPError, httpx.StreamError):
             raise provider_unavailable() from None
         return StructuredReply(_data(response), _usage(response))
 
     def _request(self, task: StructuredTask):
-        return self.client.responses.create(
+        with self.client.responses.with_streaming_response.create(**self._arguments(task)) as raw:
+            return _within(task.timeout_seconds, raw)
+
+    def _arguments(self, task: StructuredTask) -> dict:
+        return dict(
             model=self.model,
             instructions=task.instructions,
             input=[user_input(task.content)],
@@ -77,6 +83,17 @@ class OpenAIReasoningModel:
     def close(self) -> None:
         if self.client is not None:
             self.client.close()
+
+
+def _within(seconds: float, raw):
+    """Bound the whole call: providers may trickle keep-alive bytes past read timeouts."""
+    timer = threading.Timer(seconds, raw.http_response.close)
+    timer.daemon = True
+    timer.start()
+    try:
+        return raw.parse()
+    finally:
+        timer.cancel()
 
 
 def _data(response) -> dict:

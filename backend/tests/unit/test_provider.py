@@ -1,6 +1,9 @@
 """Use the actual SDK against a deterministic HTTP transport, without credentials."""
 
 import json
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import httpx
 import pytest
@@ -230,3 +233,68 @@ def test_embeddings_without_credentials_are_not_configured():
     with pytest.raises(ContextMeshError) as error:
         model.embed(["text"])
     assert error.value.code == "provider_not_configured"
+
+
+class TricklingProvider(BaseHTTPRequestHandler):
+    """Sends keep-alive whitespace slowly, as some gateways do, before any JSON."""
+
+    protocol_version = "HTTP/1.1"
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers["Content-Length"]))
+        body = json.dumps(response_body()).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body) + 20))
+        self.end_headers()
+        for _ in range(20):
+            if not _trickle(self.wfile):
+                return
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+def _trickle(stream) -> bool:
+    try:
+        stream.write(b" ")
+        stream.flush()
+    except OSError:
+        return False
+    time.sleep(0.1)
+    return True
+
+
+def test_total_call_time_is_bounded_even_when_bytes_keep_arriving():
+    server = ThreadingHTTPServer(("127.0.0.1", 0), TricklingProvider)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    model = OpenAIReasoningModel(
+        api_key="k",
+        model="m",
+        base_url=f"http://127.0.0.1:{server.server_port}/v1",
+        timeout=45,
+        max_output_tokens=10,
+    )
+    started = time.monotonic()
+    with pytest.raises(ContextMeshError) as error:
+        model.complete(StructuredTask("probe", "Return JSON.", "{}", SCHEMA, 0.5))
+    elapsed = time.monotonic() - started
+    model.close()
+    server.shutdown()
+    assert (error.value.code, elapsed < 1.5) == ("provider_unavailable", True)
+
+
+def test_a_stream_closed_by_the_wall_clock_limit_is_a_provider_failure(monkeypatch):
+    model = OpenAIReasoningModel(
+        api_key="k", model="m", base_url="http://unused/v1", timeout=1, max_output_tokens=10
+    )
+
+    def closed_before_reading(task):
+        raise httpx.StreamClosed()
+
+    monkeypatch.setattr(model, "_request", closed_before_reading)
+    with pytest.raises(ContextMeshError) as error:
+        model.complete(StructuredTask("probe", "Return JSON.", "{}", SCHEMA, 1))
+    model.close()
+    assert error.value.code == "provider_unavailable"

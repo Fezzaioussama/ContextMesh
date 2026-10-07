@@ -31,9 +31,10 @@ sources = Table(
     Column("name", String(100), nullable=False),
     Column("description", String(500), nullable=False),
     Column("owner_subject", String(200), nullable=False),
+    Column("url", Text),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("deleted_at", DateTime(timezone=True)),
-    CheckConstraint("kind IN ('upload')", name="ck_source_kind"),
+    CheckConstraint("kind IN ('upload', 'website')", name="ck_source_kind"),
 )
 Index("ix_sources_scope", sources.c.workspace_id, sources.c.created_at, sources.c.id)
 
@@ -43,9 +44,10 @@ documents = Table(
     Column("id", Uuid, primary_key=True),
     Column("workspace_id", Uuid, ForeignKey("workspaces.id"), nullable=False),
     Column("source_id", Uuid, ForeignKey("sources.id"), nullable=False),
-    Column("external_id", String(200), nullable=False),
+    Column("external_id", Text, nullable=False),
     Column("title", String(200), nullable=False),
-    Column("media_type", String(50), nullable=False),
+    Column("media_type", String(100), nullable=False),
+    Column("source_uri", Text),
     Column("latest_version_id", Uuid),
     Column("active_generation_id", Uuid),
     Column("created_at", DateTime(timezone=True), nullable=False),
@@ -100,6 +102,8 @@ chunks = Table(
     Column("content", Text, nullable=False),
     Column("line_start", Integer, nullable=False),
     Column("line_end", Integer, nullable=False),
+    Column("page", Integer),
+    Column("slide", Integer),
     Column("token_count", Integer, nullable=False),
     Column("search_vector", TSVECTOR, Computed(SEARCH_VECTOR, persisted=True)),
     UniqueConstraint("generation_id", "ordinal", name="uq_chunk_ordinal"),
@@ -129,7 +133,7 @@ jobs = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False),
     CheckConstraint(
         "kind IN ('document.index_requested', 'document.delete_requested', "
-        "'source.delete_requested')",
+        "'source.delete_requested', 'source.sync_requested')",
         name="ck_job_kind",
     ),
     CheckConstraint(

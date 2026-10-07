@@ -143,9 +143,12 @@ def _passage_columns() -> Select:
         chunks.c.generation_id,
         sources.c.name.label("source_name"),
         documents.c.title,
+        documents.c.source_uri,
         chunks.c.heading_path,
         chunks.c.line_start,
         chunks.c.line_end,
+        chunks.c.page,
+        chunks.c.slide,
         chunks.c.content,
     )
 
@@ -159,6 +162,13 @@ def passage_value(row: RowMapping) -> Passage:
         row["generation_id"],
         row["source_name"],
         row["title"],
-        Locator(tuple(row["heading_path"]), row["line_start"], row["line_end"]),
+        Locator(
+            tuple(row["heading_path"]),
+            row["line_start"],
+            row["line_end"],
+            row["page"],
+            row["slide"],
+        ),
         row["content"],
+        row["source_uri"],
     )

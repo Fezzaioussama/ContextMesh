@@ -80,7 +80,7 @@ def verify_conflict(settings, conversation_id, key):
 
 def verify_provider_bounds(payload):
     require(payload["store"] is False, "Responses storage must be disabled")
-    require(payload["max_output_tokens"] <= 4096, "Provider output budget exceeded")
+    require(payload["max_output_tokens"] <= 16384, "Provider output budget exceeded")
     require(not payload.get("tools"), "Agent unexpectedly enabled provider tools")
     require(payload["text"]["format"]["strict"] is True, "Structured output is not strict")
 

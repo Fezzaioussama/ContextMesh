@@ -17,7 +17,7 @@ backend/
       assistant.py              # Authorize scope, claim turn, run agent, release
       sources.py                # Sources, uploads, deletion, evidence
       retrieval.py              # Hybrid retrieval + deterministic reranker
-      ingestion/                # Worker loop, indexer, erasers
+      ingestion/                # Worker loop, indexer, site crawler, erasers
       agent/                    # Policy, state, planner, gatherer, assessor,
                                 #   writer, checker, release, steps
     ai/
@@ -25,11 +25,12 @@ backend/
       orchestration/graph.py    # LangGraph adapter over agent steps
     db/                         # SQLAlchemy tables and repositories
     search/qdrant.py            # Vector index adapter
-    parsers/blocks.py           # Markdown/plain-text parser with locators
+    parsers/                    # Markdown/text, HTML, PDF, Word, PowerPoint, Excel
+    web/fetcher.py              # Guarded HTTP fetcher (public destinations only)
     storage/filesystem.py       # Blob store with opaque keys
     api/ schemas/               # HTTP transport and published shapes
     bootstrap/                  # Composition roots for API and worker
-  migrations/versions/          # 0001 assistant, 0002 knowledge, 0003 consulted docs
+  migrations/versions/          # 0001 assistant … 0004 formats and websites
   scripts/start_{api,worker}.sh
   tests/{unit,integration,e2e}/
 ```
@@ -52,6 +53,17 @@ compare-and-set that rejects deleted documents, newer versions, and lost leases.
 Failed reindexing keeps the previous publication; transient failures retry with
 backoff up to five attempts. Deleting a document or source hides it immediately;
 the worker removes vectors and blobs afterwards.
+
+## Websites
+
+A website source stores a start URL. `POST /api/v1/sources/{id}/sync` enqueues one
+crawl job (repeated requests return the open job). The crawler fetches pages
+breadth-first within the start URL's directory, honours `robots.txt`, and records
+each fetched page as a document version keyed by its canonical URL, so unchanged
+pages are idempotent. Pages missing from a crawl are retired only when the crawl
+finished without hitting its limits or a transient failure. `app/web/fetcher.py`
+resolves every host itself, rejects non-public addresses and non-web ports for
+each connection and redirect, and caps time and size.
 
 ## Querying
 
@@ -101,8 +113,10 @@ automated checks.
 
 ## Known limits
 
-Only Markdown and plain text are ingested; website, PDF, and Office formats are
-not enabled. Token counts are approximate; chunks are also bounded by characters.
+Scanned documents and images need OCR, which is not implemented; legacy binary
+Office formats are not supported. Crawls are bounded and sequential, with no
+scheduled re-crawl. Token counts are approximate; chunks are also bounded by
+characters.
 There is no streaming, model-based reranker, reindex endpoint, reconciliation job
 for orphaned vectors, or evaluation harness yet. Ingestion mutations do not take
 an `Idempotency-Key`, listings are capped without cursors, and readiness does not

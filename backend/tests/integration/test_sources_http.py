@@ -40,7 +40,7 @@ def test_document_listing_reports_job_progress_and_chunk_counts(client, worker):
 @pytest.mark.parametrize(
     ("filename", "content", "status", "code"),
     [
-        ("report.pdf", b"%PDF", 415, "unsupported_media_type"),
+        ("legacy.doc", b"\xd0\xcf\x11\xe0", 415, "unsupported_media_type"),
         ("empty.md", b"", 422, "invalid_input"),
         ("large.md", b"x" * 2048, 413, "payload_too_large"),
     ],

@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
 
+from app.domain.uploads import MEDIA_TYPES
 from app.domain.validation import (
     MAX_SOURCE_FILTER,
     normalized_message,
@@ -104,5 +105,5 @@ class AgentMetadata(BaseModel):
     embedding_model: str
     configured: bool
     retrieval_enabled: bool = True
-    supported_media_types: list[str] = [".md", ".markdown", ".txt"]
+    supported_media_types: list[str] = sorted(MEDIA_TYPES)
     limits: AgentLimits

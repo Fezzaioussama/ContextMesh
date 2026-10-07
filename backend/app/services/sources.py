@@ -4,8 +4,16 @@ from hashlib import sha256
 from uuid import UUID
 
 from app.core.security import Identity
-from app.domain.knowledge import DocumentSummary, JobView, Passage, Source, UploadReceipt
+from app.domain.knowledge import (
+    DocumentSummary,
+    JobView,
+    Passage,
+    Source,
+    SourceDraft,
+    UploadReceipt,
+)
 from app.domain.uploads import checked_upload, normalized_description, normalized_source_name
+from app.domain.web import checked_start_url
 from app.services.ports.sources import BlobStore, EvidenceReader, SourceStore
 
 
@@ -23,10 +31,14 @@ class SourceService:
         self._blobs = blobs
         self.max_upload_bytes = max_upload_bytes
 
-    def create(self, identity: Identity, name: str, description: str) -> Source:
-        return self._store.create(
-            identity, normalized_source_name(name), normalized_description(description)
-        )
+    def create(
+        self, identity: Identity, name: str, description: str, url: str | None = None
+    ) -> Source:
+        """A URL makes a website source that the worker crawls; otherwise files are uploaded."""
+        return self._store.create(identity, _draft(name, description, url))
+
+    def sync(self, identity: Identity, source_id: UUID) -> UUID:
+        return self._store.request_sync(identity, source_id)
 
     def sources(self, identity: Identity) -> tuple[Source, ...]:
         return self._store.sources(identity)
@@ -63,3 +75,10 @@ class SourceService:
         self, identity: Identity, document_id: UUID, version_id: UUID, chunk_id: UUID
     ) -> Passage:
         return self._evidence.passage(identity, document_id, version_id, chunk_id)
+
+
+def _draft(name: str, description: str, url: str | None) -> SourceDraft:
+    name, description = normalized_source_name(name), normalized_description(description)
+    if url is None:
+        return SourceDraft("upload", name, description)
+    return SourceDraft("website", name, description, checked_start_url(url))

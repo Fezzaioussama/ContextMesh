@@ -7,11 +7,22 @@ from uuid import UUID
 
 from app.domain.answers import Locator
 
-SourceKind = Literal["upload"]
+SourceKind = Literal["upload", "website"]
 JobKind = Literal[
-    "document.index_requested", "document.delete_requested", "source.delete_requested"
+    "document.index_requested",
+    "document.delete_requested",
+    "source.delete_requested",
+    "source.sync_requested",
 ]
 JobStatus = Literal["queued", "running", "succeeded", "failed", "cancelled"]
+
+
+@dataclass(frozen=True)
+class SourceDraft:
+    kind: SourceKind
+    name: str
+    description: str
+    url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -23,6 +34,8 @@ class Source:
     document_count: int
     searchable_count: int
     created_at: datetime
+    url: str | None = None
+    latest_sync: "JobView | None" = None
 
 
 @dataclass(frozen=True)
@@ -54,6 +67,7 @@ class DocumentSummary:
     chunk_count: int
     latest_job: JobView | None
     updated_at: datetime
+    uri: str | None = None
 
 
 @dataclass(frozen=True)
@@ -88,11 +102,20 @@ class IndexTarget:
 
 
 @dataclass(frozen=True)
+class WebsiteTarget:
+    workspace_id: UUID
+    source_id: UUID
+    start_url: str
+
+
+@dataclass(frozen=True)
 class Element:
     text: str
     heading_path: tuple[str, ...]
     line_start: int
     line_end: int
+    page: int | None = None
+    slide: int | None = None
 
 
 @dataclass(frozen=True)
@@ -121,6 +144,7 @@ class Passage:
     title: str
     locator: Locator
     text: str
+    uri: str | None = None
 
 
 @dataclass(frozen=True)

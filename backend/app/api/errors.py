@@ -16,6 +16,7 @@ ERROR_STATUS = {
     "turn_in_progress": 409,
     "idempotency_conflict": 409,
     "evidence_changed": 409,
+    "wrong_source_kind": 409,
     "payload_too_large": 413,
     "unsupported_media_type": 415,
     "invalid_input": 422,

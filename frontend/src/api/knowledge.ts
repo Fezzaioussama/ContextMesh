@@ -15,16 +15,24 @@ export async function sources(signal: AbortSignal): Promise<Source[]> {
   return page.items;
 }
 
-export function createSource(
-  name: string,
-  description: string,
-  signal: AbortSignal,
-): Promise<Source> {
+export interface SourceRequest {
+  name: string;
+  description: string;
+  url: string | null;
+}
+
+/** A URL registers a website to crawl; without one the source holds uploaded files. */
+export function createSource(request: SourceRequest): Promise<Source> {
   return requestJson(`${base}/sources`, {
     method: "POST",
-    signal,
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, description }),
+    body: JSON.stringify(request),
+  });
+}
+
+export function syncSource(id: string): Promise<{ job_id: string }> {
+  return requestJson(`${base}/sources/${encodeURIComponent(id)}/sync`, {
+    method: "POST",
   });
 }
 

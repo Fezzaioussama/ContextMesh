@@ -5,6 +5,7 @@ from collections.abc import Callable
 
 from app.domain.errors import IngestionFailure
 from app.domain.knowledge import Element
+from app.parsers.elements import HeadingTrail
 
 HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
 FENCE = re.compile(r"^\s*(```|~~~)")
@@ -36,7 +37,7 @@ class BlockParser:
 class _BlockReader:
     def __init__(self, markdown: bool):
         self._markdown = markdown
-        self._headings: list[tuple[int, str]] = []
+        self._trail = HeadingTrail()
         self._lines: list[str] = []
         self._start = 0
         self._end = 0
@@ -73,12 +74,7 @@ class _BlockReader:
             self._append(number, line)
             return
         self._flush()
-        self._enter(len(heading.group(1)), heading.group(2).strip())
-
-    def _enter(self, level: int, title: str) -> None:
-        while self._headings and self._headings[-1][0] >= level:
-            self._headings.pop()
-        self._headings.append((level, title))
+        self._trail.enter(len(heading.group(1)), heading.group(2).strip())
 
     def _append(self, number: int, line: str) -> None:
         if not self._lines:
@@ -89,10 +85,5 @@ class _BlockReader:
     def _flush(self) -> None:
         text = "\n".join(self._lines).strip()
         if text:
-            path = tuple(title for _, title in self._headings)
-            self._elements.append(Element(text, path, self._start, self._end))
+            self._elements.append(Element(text, self._trail.path, self._start, self._end))
         self._lines = []
-
-
-def default_parsers() -> dict[str, BlockParser]:
-    return {"text/markdown": BlockParser(markdown=True), "text/plain": BlockParser(markdown=False)}

@@ -27,13 +27,16 @@ def test_idempotency_key_has_a_bounded_nonempty_length(key):
 @pytest.mark.parametrize(
     "values",
     [
-        {"max_output_tokens": 4097},
+        {"max_output_tokens": 16385},
         {"provider_timeout_seconds": 46},
         {"turn_lease_seconds": 45},
         {"agent_deadline_seconds": 90, "turn_lease_seconds": 90},
         {"agent_deadline_seconds": 5},
-        {"max_upload_bytes": 10_000_001},
+        {"max_upload_bytes": 50_000_001},
+        {"crawl_max_pages": 501},
+        {"web_timeout_seconds": 31},
         {"job_lease_seconds": 45},
+        {"web_timeout_seconds": 20, "job_lease_seconds": 120},
         {"database_url": "sqlite://"},
     ],
 )

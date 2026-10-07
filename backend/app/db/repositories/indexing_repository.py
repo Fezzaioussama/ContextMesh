@@ -153,6 +153,8 @@ def _chunk_row(target: IndexTarget, generation_id: UUID, chunk: ChunkDraft) -> d
         "content": chunk.text,
         "line_start": chunk.locator.line_start,
         "line_end": chunk.locator.line_end,
+        "page": chunk.locator.page,
+        "slide": chunk.locator.slide,
         "token_count": chunk.token_count,
     }
 

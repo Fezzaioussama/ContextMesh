@@ -102,6 +102,7 @@ def _citation(number: int, item: Evidence) -> Citation:
         passage.title,
         passage.locator,
         snippet(passage.text),
+        passage.uri,
     )
 
 

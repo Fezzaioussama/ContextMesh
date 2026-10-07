@@ -40,5 +40,6 @@ citations = Table(
     Column("title", String(200), nullable=False),
     Column("locator", JSONB, nullable=False),
     Column("snippet", Text, nullable=False),
+    Column("source_url", Text),
     UniqueConstraint("message_id", "number", name="uq_citation_number"),
 )

@@ -24,7 +24,7 @@ def test_upload_name_is_reduced_to_a_safe_base_name(filename, title, media_type)
 @pytest.mark.parametrize(
     ("filename", "size", "code"),
     [
-        ("report.pdf", 10, "unsupported_media_type"),
+        ("photo.png", 10, "unsupported_media_type"),
         ("notes", 10, "unsupported_media_type"),
         ("notes.md", 0, "invalid_input"),
         ("notes.md", 101, "payload_too_large"),

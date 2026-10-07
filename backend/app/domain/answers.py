@@ -13,9 +13,13 @@ WITHHELD_TEXT = "This answer is unavailable because evidence it relied on was re
 
 @dataclass(frozen=True)
 class Locator:
+    """Lines count within the extracted text of the page or slide when those are set."""
+
     heading_path: tuple[str, ...]
     line_start: int
     line_end: int
+    page: int | None = None
+    slide: int | None = None
 
 
 @dataclass(frozen=True)
@@ -30,6 +34,7 @@ class Citation:
     title: str
     locator: Locator
     snippet: str
+    source_url: str | None = None
 
 
 @dataclass(frozen=True)

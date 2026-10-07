@@ -13,6 +13,8 @@ from app.search.qdrant import QdrantVectorIndex
 from app.services.ports.ingestion import VectorWriter
 from app.services.ports.models import EmbeddingModel, ReasoningModel
 from app.services.ports.retrieval import VectorSearch
+from app.services.ports.web import WebFetcher
+from app.web.fetcher import SafeHttpFetcher
 
 
 class VectorIndex(VectorWriter, VectorSearch, Protocol):
@@ -24,6 +26,7 @@ class ExternalServices:
     reasoning: ReasoningModel
     embeddings: EmbeddingModel
     vectors: VectorIndex
+    fetcher: WebFetcher
 
 
 def collection_name(embedding_identity: str) -> str:
@@ -53,4 +56,8 @@ def create_services(config: Settings, resources: ExitStack) -> ExternalServices:
     client = QdrantClient(url=config.qdrant_url, timeout=5, check_compatibility=False)
     resources.callback(client.close)
     vectors = QdrantVectorIndex(client, collection_name(embeddings.identity))
-    return ExternalServices(reasoning, embeddings, vectors)
+    fetcher = SafeHttpFetcher(
+        timeout_seconds=config.web_timeout_seconds, max_bytes=config.web_max_page_bytes
+    )
+    resources.callback(fetcher.close)
+    return ExternalServices(reasoning, embeddings, vectors, fetcher)

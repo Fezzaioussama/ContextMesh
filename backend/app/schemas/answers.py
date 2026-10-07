@@ -7,10 +7,14 @@ from pydantic import BaseModel, ConfigDict, computed_field
 
 
 class LocatorResponse(BaseModel):
+    """`page` is set for PDFs and `slide` for presentations; lines count within them."""
+
     model_config = ConfigDict(from_attributes=True)
     heading_path: list[str]
     line_start: int
     line_end: int
+    page: int | None
+    slide: int | None
 
 
 class CitationResponse(BaseModel):
@@ -25,6 +29,7 @@ class CitationResponse(BaseModel):
     title: str
     locator: LocatorResponse
     snippet: str
+    source_url: str | None
 
     @computed_field
     @property

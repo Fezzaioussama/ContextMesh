@@ -11,9 +11,12 @@ from app.schemas.answers import LocatorResponse
 
 
 class CreateSource(BaseModel):
+    """Omit `url` for an upload source; a `url` creates a website source to crawl."""
+
     model_config = ConfigDict(extra="forbid")
     name: StrictStr = Field(min_length=1, max_length=100)
     description: StrictStr = Field(default="", max_length=500)
+    url: StrictStr | None = Field(default=None, min_length=1, max_length=2000)
 
     @field_validator("name")
     @classmethod
@@ -24,21 +27,6 @@ class CreateSource(BaseModel):
     @classmethod
     def valid_description(cls, value: str) -> str:
         return normalized_description(value)
-
-
-class SourceResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: UUID
-    kind: Literal["upload"]
-    name: str
-    description: str
-    document_count: int
-    searchable_count: int
-    created_at: datetime
-
-
-class SourceList(BaseModel):
-    items: list[SourceResponse]
 
 
 class JobResponse(BaseModel):
@@ -52,6 +40,23 @@ class JobResponse(BaseModel):
     updated_at: datetime
 
 
+class SourceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    kind: Literal["upload", "website"]
+    name: str
+    description: str
+    url: str | None
+    document_count: int
+    searchable_count: int
+    latest_sync: JobResponse | None
+    created_at: datetime
+
+
+class SourceList(BaseModel):
+    items: list[SourceResponse]
+
+
 class DocumentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
@@ -61,6 +66,7 @@ class DocumentResponse(BaseModel):
     searchable: bool
     chunk_count: int
     latest_job: JobResponse | None
+    uri: str | None
     updated_at: datetime
 
 
@@ -90,3 +96,4 @@ class EvidenceResponse(BaseModel):
     title: str
     locator: LocatorResponse
     text: str
+    uri: str | None
