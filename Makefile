@@ -28,7 +28,7 @@ quality-test:
 	$(PYTHON) -m unittest discover -s tools/quality/tests/python -v
 	npm run quality:test:js
 
-.PHONY: app-setup dev stop db migrate backend-dev frontend-dev app-test smoke-setup smoke
+.PHONY: app-setup dev stop db migrate backend-dev worker-dev frontend-dev app-test smoke-setup smoke
 
 .env:
 	cp .env.example .env
@@ -42,14 +42,18 @@ dev: .env
 stop:
 	docker compose down
 
+# PostgreSQL holds canonical state; Qdrant holds the rebuildable vector projection.
 db:
-	docker compose up -d --wait postgres
+	docker compose up -d --wait postgres qdrant
 
 migrate:
 	cd backend && uv run --locked alembic upgrade head
 
 backend-dev:
 	uv run --project backend --locked uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 --reload
+
+worker-dev:
+	uv run --project backend --locked python -m app.worker
 
 frontend-dev:
 	npm --workspace frontend run dev

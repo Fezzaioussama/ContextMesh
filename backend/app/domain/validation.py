@@ -1,6 +1,10 @@
 """Input policy enforced for HTTP and direct application callers alike."""
 
+from uuid import UUID
+
 from app.core.exceptions import invalid_input
+
+MAX_SOURCE_FILTER = 50
 
 
 def normalized_message(message: str) -> str:
@@ -25,6 +29,15 @@ def normalized_title(title: str) -> str:
     if len(value) > 100:
         raise invalid_input("Titles are limited to 100 characters.")
     return value
+
+
+def checked_source_filter(source_ids: tuple[UUID, ...] | None) -> tuple[UUID, ...] | None:
+    if source_ids is None:
+        return None
+    unique = tuple(dict.fromkeys(source_ids))
+    if not 1 <= len(unique) <= MAX_SOURCE_FILTER:
+        raise invalid_input("Select between 1 and 50 sources, or omit the filter.")
+    return unique
 
 
 def checked_page(limit: int, maximum: int, cursor: str | None) -> None:

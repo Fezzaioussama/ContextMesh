@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Query
 
-from app.api.deps import conversation_service, principal
+from app.api.deps import conversation_service, principal, source_service
 from app.core.security import Identity
 from app.domain.models import Conversation, Message, Page, TurnResult
 from app.schemas.chat import (
@@ -19,17 +19,29 @@ from app.schemas.chat import (
     TurnResponse,
 )
 from app.services.chat_service import ConversationService
+from app.services.sources import SourceService
 
 
 def metadata(
     service: Annotated[ConversationService, Depends(conversation_service)],
+    uploads: Annotated[SourceService, Depends(source_service)],
 ) -> AgentMetadata:
     metadata = service.metadata()
+    policy = metadata.policy
     return AgentMetadata(
         provider=metadata.provider,
         model=metadata.model,
+        embedding_model=metadata.embedding_model,
         configured=metadata.configured,
-        limits=AgentLimits(max_output_tokens=metadata.max_output_tokens),
+        limits=AgentLimits(
+            max_history_messages=policy.history_messages,
+            max_output_tokens=metadata.max_output_tokens,
+            max_retrieval_rounds=policy.max_rounds,
+            max_query_variants=policy.max_query_variants,
+            max_repairs=policy.max_repairs,
+            deadline_seconds=policy.deadline_seconds,
+            max_upload_bytes=uploads.max_upload_bytes,
+        ),
     )
 
 
@@ -67,7 +79,8 @@ def send_message(
     service: Annotated[ConversationService, Depends(conversation_service)],
     identity: Annotated[Identity, Depends(principal)],
 ) -> TurnResult:
-    return service.send(identity, conversation_id, idempotency_key, body.message)
+    scope = None if body.source_ids is None else tuple(body.source_ids)
+    return service.send(identity, conversation_id, idempotency_key, body.message, scope)
 
 
 def assistant_router() -> APIRouter:

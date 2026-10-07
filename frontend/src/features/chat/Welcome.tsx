@@ -2,18 +2,18 @@ import { Icon } from "../../components/Icon";
 
 const suggestions = [
   {
-    title: "Make a plan",
-    text: "Help me break down a complex project into practical next steps.",
+    title: "Recall a decision",
+    text: "What did we decide about authentication, and why?",
     icon: "01",
   },
   {
-    title: "Understand an idea",
-    text: "Explain dependency inversion with a clear, everyday example.",
+    title: "Find a detail",
+    text: "When does the rollout start, and which service goes first?",
     icon: "02",
   },
   {
-    title: "Think it through",
-    text: "Help me compare the tradeoffs of an important decision.",
+    title: "Check for conflicts",
+    text: "Do any documents disagree about the release plan?",
     icon: "03",
   },
 ];
@@ -30,11 +30,11 @@ export function Welcome({
       <div className="welcome-symbol">
         <Icon name="mesh" />
       </div>
-      <p className="eyebrow">A LITTLE CLARITY STARTS HERE</p>
-      <h2>What are you working on?</h2>
+      <p className="eyebrow">GROUNDED IN YOUR SOURCES</p>
+      <h2>What do you want to find out?</h2>
       <p className="welcome-description">
-        A space to explore ideas, untangle questions,
-        <br className="desktop-break" /> and find your next step.
+        The agent plans a search, expands it when evidence is missing, and
+        cites the passages behind every claim.
       </p>
       <div className="suggestion-grid">
         {suggestions.map((suggestion) => (
@@ -52,7 +52,7 @@ export function Welcome({
         ))}
       </div>
       <p className="welcome-note">
-        Provider chat · knowledge retrieval not connected
+        Agentic retrieval · answers without evidence are reported as gaps
       </p>
     </section>
   );

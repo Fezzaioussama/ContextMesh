@@ -1,28 +1,32 @@
-# Initial assistant smoke
+# Agentic retrieval smoke
 
 `make smoke-setup` installs the pinned Playwright Chromium runtime; `make smoke`
 runs `backend/tests/e2e/runner.py`. Install backend/frontend dependencies first
-and provide a real PostgreSQL database through `CONTEXTMESH_TEST_DATABASE_URL`.
+and provide a real PostgreSQL database through `CONTEXTMESH_TEST_DATABASE_URL`
+and a running Qdrant through `CONTEXTMESH_TEST_QDRANT_URL` (default
+`http://127.0.0.1:6333`).
 The default database is `contextmesh_test` on localhost port 55432. Alembic
 migrations run before the smoke. This suite never truncates tables and creates a
-unique server-side development identity per run.
+unique server-side development identity and workspace per run.
 
 `make smoke SMOKE_PROVIDER=openrouter` exercises OpenRouter selection, model
 configuration, saved assistant message fields, and OpenRouter-specific setup
 guidance against the same controlled fixture. The default smoke selects OpenAI.
 Both runs override provider settings so local credentials never cause paid calls.
 
-The runner starts a loopback OpenAI Responses HTTP fixture, real FastAPI process,
-and real Vite process. The actual OpenAI SDK adapter receives the fixture URL and
-fixture credential through server environment settings. No browser routes are
+The runner starts a loopback OpenAI-compatible fixture (Responses and Embeddings
+APIs), a real FastAPI process, a real ingestion worker, and a real Vite process.
+The fixture answers each structured agent task by its schema name. The actual SDK
+adapters receive the fixture URL and credential through server environment settings. No browser routes are
 mocked, and no paid provider calls occur. These checks establish deterministic
 adapter integration, not live-model quality or account access.
 
-The smoke verifies public idempotent replay and conflicts, saved model context,
-provider request bounds, safe upstream errors, same-key retry without duplicate
-messages, browser chat and sidebar history, refresh persistence, API restart
-persistence, inert model HTML, mobile layout, keyboard behavior, and missing-key
-API/UI behavior. Backend integration tests separately establish concurrent turn
+The smoke verifies upload through the API and the Sources drawer, worker indexing
+into Qdrant, cited answers whose evidence resolves, the four bounded agent calls
+per turn, idempotent replay and conflicts, saved planning context, strict provider
+request bounds, safe upstream errors, same-key retry without duplicate messages,
+sidebar history, refresh and API-restart persistence, inert HTML from documents,
+mobile layout, keyboard behavior, and missing-key API/UI behavior. Backend integration tests separately establish concurrent turn
 exclusion, expired execution recovery/fencing, and requester/workspace isolation.
 
 Runtime logs plus desktop/mobile screenshots remain in a printed temporary

@@ -58,3 +58,23 @@ def test_selected_configuration_repr_masks_provider_secret():
         _env_file=None, model_provider="openrouter", openrouter_api_key="private-router-key"
     ).selected_model
     assert "private-router-key" not in repr(selected)
+
+
+@pytest.mark.parametrize(
+    ("provider", "expected"),
+    [("openai", "direct-embed"), ("openrouter", "vendor/router-embed")],
+)
+def test_embedding_model_follows_the_selected_provider(provider, expected):
+    selected = Settings(
+        _env_file=None,
+        model_provider=provider,
+        embedding_model="direct-embed",
+        openrouter_embedding_model="vendor/router-embed",
+    ).selected_model
+    assert selected.embedding_model == expected
+
+
+def test_relative_blob_directory_is_anchored_at_the_repository_root():
+    settings = Settings(_env_file=None, blob_dir="relative/blobs")
+    assert settings.blob_dir.is_absolute()
+    assert settings.blob_dir.parts[-2:] == ("relative", "blobs")

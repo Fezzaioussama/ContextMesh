@@ -1,5 +1,6 @@
 export interface PendingAttempt {
   message: string;
+  sourceIds: string[] | null;
   key: string;
 }
 const selectionKey = "contextmesh.selected-conversation";
@@ -20,11 +21,15 @@ export function saveSelection(id: string): void {
   }
 }
 
+function normalizedAttempt(value: PendingAttempt): PendingAttempt {
+  return { ...value, sourceIds: value.sourceIds ?? null };
+}
+
 export function readAttempt(id: string): PendingAttempt | null {
   try {
     const stored = sessionStorage.getItem(`contextmesh.turn.${id}`);
     if (stored === null) return null;
-    return JSON.parse(stored) as PendingAttempt;
+    return normalizedAttempt(JSON.parse(stored) as PendingAttempt);
   } catch {
     return null;
   }

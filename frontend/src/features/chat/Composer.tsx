@@ -1,5 +1,6 @@
 import type { FormEvent, KeyboardEvent } from "react";
 import { Icon } from "../../components/Icon";
+import { AGENT_NAME } from "./agentName";
 
 interface ComposerProps {
   draft: string;
@@ -29,14 +30,14 @@ export function Composer(props: ComposerProps) {
   return (
     <form className="composer" onSubmit={onSubmit}>
       <label className="sr-only" htmlFor="message">
-        Message Foundation Assistant
+        Message {AGENT_NAME}
       </label>
       <textarea
         id="message"
         value={props.draft}
         onChange={(event) => props.change(event.target.value)}
         onKeyDown={onKeyDown}
-        placeholder="Ask a question or share an idea…"
+        placeholder="Ask a question about your sources…"
         maxLength={props.maxLength}
         disabled={props.disabled}
         rows={2}
@@ -59,6 +60,6 @@ export function Composer(props: ComposerProps) {
 }
 
 function ComposerHint({ pending }: { pending: boolean }) {
-  if (pending) return "Waiting for your assistant…";
+  if (pending) return "The agent is researching your sources…";
   return "Enter to send · Shift + Enter for a new line";
 }

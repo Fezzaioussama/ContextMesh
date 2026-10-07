@@ -1,4 +1,4 @@
-"""Turn hydration and bounded saved context."""
+"""Turn hydration and bounded saved context, with evidence-aware answer withholding."""
 
 from typing import Literal
 from uuid import UUID
@@ -7,6 +7,7 @@ from sqlalchemy import Connection, RowMapping, select
 
 from app.db.models.conversation import messages
 from app.db.repositories.access import message_value
+from app.db.repositories.answer_records import with_answers
 from app.domain.models import Message, TurnResult, Usage
 
 
@@ -20,16 +21,18 @@ def turn_message(
         .mappings()
         .one()
     )
-    return message_value(row)
+    return with_answers(connection, [message_value(row)])[0]
 
 
 def completed_result(connection: Connection, row: RowMapping) -> TurnResult:
+    assistant = turn_message(connection, row["id"], "assistant")
     return TurnResult(
         row["id"],
         row["conversation_id"],
         turn_message(connection, row["id"], "user"),
-        turn_message(connection, row["id"], "assistant"),
+        assistant,
         Usage(row["input_tokens"], row["output_tokens"]),
+        assistant.trace,
     )
 
 
@@ -41,7 +44,7 @@ def bounded_history(
     )
     query = query.order_by(messages.c.created_at.desc(), messages.c.id.desc()).limit(20)
     rows = connection.execute(query).mappings().all()
-    values = [message_value(row) for row in rows]
+    values = with_answers(connection, [message_value(row) for row in rows])
     return _within_character_budget(values)
 
 

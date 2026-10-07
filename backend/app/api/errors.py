@@ -12,11 +12,20 @@ from app.core.logging import http_logger as logger
 
 ERROR_STATUS = {
     "not_found": 404,
+    "forbidden": 403,
     "turn_in_progress": 409,
     "idempotency_conflict": 409,
+    "evidence_changed": 409,
+    "payload_too_large": 413,
+    "unsupported_media_type": 415,
     "invalid_input": 422,
     "provider_unavailable": 503,
     "provider_not_configured": 503,
+    "model_output_invalid": 503,
+    "model_output_limit": 503,
+    "agent_deadline_exceeded": 503,
+    "agent_budget_exceeded": 503,
+    "embedding_input_rejected": 422,
     "database_unavailable": 503,
 }
 

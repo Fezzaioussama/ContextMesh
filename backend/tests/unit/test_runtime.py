@@ -1,10 +1,10 @@
-"""Owned resources close on shutdown and failure; injected models stay caller-owned."""
+"""Owned resources close on shutdown and failure; injected services stay caller-owned."""
 
 from unittest.mock import Mock
 
 import pytest
-from app.ai.llm.openai import OpenAIChatModel
 from app.bootstrap import api, runtime
+from app.bootstrap.services import ExternalServices
 from app.core.config import Settings
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
@@ -14,10 +14,16 @@ from sqlalchemy.exc import SQLAlchemyError
 @pytest.fixture
 def resources(monkeypatch):
     engine = Mock(spec=Engine)
-    model = Mock(spec=OpenAIChatModel)
-    factory = Mock(return_value=model)
+    model = Mock()
+    services = ExternalServices(Mock(), Mock(), Mock())
+
+    def create(config, stack):
+        stack.callback(model.close)
+        return services
+
+    factory = Mock(side_effect=create)
     monkeypatch.setattr(runtime, "create_database_engine", Mock(return_value=engine))
-    monkeypatch.setattr(runtime, "create_model", factory)
+    monkeypatch.setattr(runtime, "create_services", factory)
     monkeypatch.setattr(runtime.DevelopmentIdentityRepository, "provision", Mock())
     settings = Settings(_env_file=None, api_key="")
     return settings, engine, model, factory
@@ -33,7 +39,7 @@ def test_owned_provider_and_database_close_after_shutdown(resources):
 
 def test_injected_provider_lifetime_belongs_to_caller(resources):
     settings, engine, model, factory = resources
-    with TestClient(api.create_app(settings, model)):
+    with TestClient(api.create_app(settings, ExternalServices(Mock(), Mock(), Mock()))):
         pass
     factory.assert_not_called()
     model.close.assert_not_called()

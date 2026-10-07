@@ -1,4 +1,4 @@
-"""Real process and HTTP lifecycle helpers for the initial-chat smoke run."""
+"""Real process and HTTP lifecycle helpers for the agentic-retrieval smoke run."""
 
 import json
 import os
@@ -8,8 +8,13 @@ import urllib.error
 import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
+from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[3]
+FACT = "Fixture fact: <script>window.fixtureExecuted = true</script> <b>literal</b>"
+DOCUMENT = f"# Fixture handbook\n\n## Facts\n\n{FACT}\n"
+QUESTION = "Which fixture fact applies?"
+ANSWER = f"{FACT} [1]"
 
 
 def require(condition, message):
@@ -21,8 +26,11 @@ def request(base, path, body=None, key=None):
     headers = {"Content-Type": "application/json"}
     if key is not None:
         headers["Idempotency-Key"] = key
-    encoded = encode_body(body)
-    operation = urllib.request.Request(base + path, data=encoded, headers=headers)
+    operation = urllib.request.Request(base + path, data=encode_body(body), headers=headers)
+    return send(operation)
+
+
+def send(operation):
     try:
         with urllib.request.urlopen(operation, timeout=60) as response:
             return response.status, json.load(response), response.headers
@@ -34,6 +42,18 @@ def encode_body(body):
     if body is None:
         return None
     return json.dumps(body).encode()
+
+
+def upload(base, source_id, filename, text):
+    boundary = uuid4().hex
+    body = (
+        f'--{boundary}\r\nContent-Disposition: form-data; name="file"; '
+        f'filename="{filename}"\r\nContent-Type: text/markdown\r\n\r\n{text}\r\n'
+        f"--{boundary}--\r\n"
+    ).encode()
+    headers = {"Content-Type": f"multipart/form-data; boundary={boundary}"}
+    path = f"/api/v1/sources/{source_id}/documents"
+    return send(urllib.request.Request(base + path, data=body, headers=headers))
 
 
 def wait_ready(url, process):
@@ -73,13 +93,18 @@ def api_environment(settings, provider_url, configured=True):
     environment = os.environ.copy()
     environment.update(
         CONTEXTMESH_DATABASE_URL=settings.database_url,
+        CONTEXTMESH_QDRANT_URL=settings.qdrant_url,
+        CONTEXTMESH_BLOB_DIR=str(settings.blob_dir),
         CONTEXTMESH_DEV_SUBJECT=settings.subject,
+        CONTEXTMESH_DEV_WORKSPACE_ID=settings.workspace_id,
         CONTEXTMESH_MODEL_PROVIDER=settings.model_provider,
         OPENAI_API_KEY="fixture-key",
         OPENAI_MODEL="gpt-4.1-mini",
+        OPENAI_EMBEDDING_MODEL="fixture-embedding",
         OPENAI_BASE_URL=provider_url,
         OPENROUTER_API_KEY="router-fixture-key",
         OPENROUTER_MODEL="openai/gpt-4.1-mini",
+        OPENROUTER_EMBEDDING_MODEL="fixture/embedding",
         OPENROUTER_BASE_URL=provider_url,
         CONTEXTMESH_ALLOWED_ORIGINS=json.dumps([settings.frontend_url]),
     )
@@ -89,13 +114,12 @@ def api_environment(settings, provider_url, configured=True):
     return environment
 
 
+def backend_command(*arguments):
+    return ["uv", "run", "--project", "backend", "--locked", *arguments]
+
+
 def api_command(settings):
-    return [
-        "uv",
-        "run",
-        "--project",
-        "backend",
-        "--locked",
+    return backend_command(
         "uvicorn",
         "app.main:create_app",
         "--factory",
@@ -103,7 +127,7 @@ def api_command(settings):
         "127.0.0.1",
         "--port",
         str(settings.api_port),
-    ]
+    )
 
 
 @contextmanager
@@ -112,6 +136,14 @@ def running_api(settings, provider_url, log_dir, configured=True):
     with started(api_command(settings), ROOT, environment, log_dir / "api.log") as process:
         wait_ready(settings.api_url + "/health/ready", process)
         yield
+
+
+@contextmanager
+def running_worker(settings, provider_url, log_dir):
+    environment = api_environment(settings, provider_url)
+    command = backend_command("python", "-m", "app.worker")
+    with started(command, ROOT, environment, log_dir / "worker.log") as process:
+        yield process
 
 
 @contextmanager

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from app.core.security import Identity
 from app.services.chat_service import ConversationService
 from app.services.health_service import HealthService
+from app.services.sources import SourceService
 
 
 def conversation_service() -> ConversationService:
@@ -17,6 +18,10 @@ def principal() -> Identity:
 
 def health_service() -> HealthService:
     raise RuntimeError("The health service dependency has not been configured.")
+
+
+def source_service() -> SourceService:
+    raise RuntimeError("The source service dependency has not been configured.")
 
 
 @dataclass(frozen=True)
@@ -36,4 +41,12 @@ class HealthDependencies:
     service: HealthService
 
     def health_service(self) -> HealthService:
+        return self.service
+
+
+@dataclass(frozen=True)
+class SourceDependencies:
+    service: SourceService
+
+    def source_service(self) -> SourceService:
         return self.service

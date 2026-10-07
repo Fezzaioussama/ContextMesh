@@ -1,18 +1,21 @@
 """Use the actual SDK against a deterministic HTTP transport, without credentials."""
 
 import json
-from datetime import UTC, datetime
-from uuid import uuid4
 
 import httpx
 import pytest
-from app.ai.llm.openai import OpenAIChatModel
+from app.ai.llm.embeddings import OpenAIEmbeddingModel
+from app.ai.llm.openai import OpenAIReasoningModel
 from app.core.exceptions import ContextMeshError
-from app.domain.models import Message, Usage
+from app.domain.models import Usage
+from app.services.ports.models import StructuredTask
 from openai import OpenAI
 
+SCHEMA = {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"]}
+TASK = StructuredTask("probe", "Return JSON.", '{"question": "q"}', SCHEMA, 12.5)
 
-def response_body(status="completed", content="Hello"):
+
+def response_body(status="completed", content='{"ok": true}'):
     return {
         "id": "resp_fixture",
         "object": "response",
@@ -38,84 +41,104 @@ def response_body(status="completed", content="Hello"):
     }
 
 
-def model_with_transport(handler):
-    client = OpenAI(
+class RecordingProvider:
+    def __init__(self, status_code=200, body=None):
+        self.requests = []
+        self.timeouts = []
+        self.status_code = status_code
+        self.body = response_body() if body is None else body
+
+    def __call__(self, request):
+        self.requests.append(json.loads(request.content))
+        self.timeouts.append(request.extensions["timeout"])
+        return httpx.Response(self.status_code, json=self.body)
+
+
+def sdk(handler):
+    return OpenAI(
         api_key="test-only",
         base_url="http://provider.test/v1",
         max_retries=0,
         timeout=45,
         http_client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
-    return OpenAIChatModel(
+
+
+def reasoning_with(handler):
+    return OpenAIReasoningModel(
         api_key="test-only",
         model="fixture-model",
         base_url="http://provider.test/v1",
         timeout=45,
-        max_output_tokens=1024,
-        client=client,
+        max_output_tokens=2048,
+        client=sdk(handler),
     )
 
 
-class RecordingProvider:
-    def __init__(self, status_code=200, body=None):
-        self.requests = []
-        self.status_code = status_code
-        self.body = response_body()
-        if body is not None:
-            self.body = body
-
-    def __call__(self, request):
-        self.requests.append(json.loads(request.content))
-        return httpx.Response(self.status_code, json=self.body)
-
-
-def test_sdk_sends_scoped_history_without_stored_state_or_tools():
+def test_structured_request_is_strict_stateless_tool_free_and_task_bounded():
     provider = RecordingProvider()
-    model = model_with_transport(provider)
-    history = (Message(uuid4(), uuid4(), "user", "Earlier", datetime.now(UTC)),)
-    model.respond(history, "Now")
+    model = reasoning_with(provider)
+    reply = model.complete(TASK)
     request = provider.requests[0]
-    assert request["input"] == [
-        {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Earlier"}]},
-        {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Now"}]},
-    ]
-    assert (request["store"], request["max_output_tokens"], request.get("tools")) == (
-        False,
-        1024,
-        None,
-    )
-    model.close()
-
-
-def test_sdk_replays_saved_assistant_as_completed_output_message():
-    provider = RecordingProvider()
-    model = model_with_transport(provider)
-    saved = Message(uuid4(), uuid4(), "assistant", "Earlier reply", datetime.now(UTC))
-    model.respond((saved,), "Follow up")
-    assert provider.requests[0]["input"][0] == {
-        "id": f"msg_{saved.id.hex}",
-        "type": "message",
-        "role": "assistant",
-        "status": "completed",
-        "content": [{"type": "output_text", "text": "Earlier reply", "annotations": []}],
+    assert request["text"]["format"] == {
+        "type": "json_schema",
+        "name": "probe",
+        "schema": SCHEMA,
+        "strict": True,
     }
+    sent = (
+        request["store"],
+        request["max_output_tokens"],
+        request.get("tools"),
+        request["input"][0]["content"][0]["text"],
+        provider.timeouts[0]["read"],
+    )
+    assert sent == (False, 2048, None, '{"question": "q"}', 12.5)
+    assert (reply.data, reply.usage) == ({"ok": True}, Usage(10, 4))
     model.close()
 
 
-def test_sdk_maps_response_text_and_actual_usage():
-    model = model_with_transport(RecordingProvider())
-    reply = model.respond((), "Hello")
-    assert reply.content == "Hello"
-    assert reply.usage == Usage(10, 4)
+def test_fenced_json_is_accepted():
+    model = reasoning_with(
+        RecordingProvider(body=response_body(content='```json\n{"ok": true}\n```'))
+    )
+    assert model.complete(TASK).data == {"ok": True}
+    model.close()
+
+
+@pytest.mark.parametrize("content", ["not json", "[1, 2]", ""])
+def test_non_object_output_is_a_safe_invalid_model_output(content):
+    model = reasoning_with(RecordingProvider(body=response_body(content=content)))
+    with pytest.raises(ContextMeshError) as failure:
+        model.complete(TASK)
+    assert failure.value.code == "model_output_invalid"
+    model.close()
+
+
+def test_incomplete_response_is_a_provider_failure():
+    model = reasoning_with(RecordingProvider(body=response_body("incomplete")))
+    with pytest.raises(ContextMeshError) as failure:
+        model.complete(TASK)
+    assert failure.value.code == "provider_unavailable"
+    model.close()
+
+
+def test_output_budget_exhaustion_names_the_setting_to_raise():
+    body = {**response_body("incomplete"), "incomplete_details": {"reason": "max_output_tokens"}}
+    model = reasoning_with(RecordingProvider(body=body))
+    with pytest.raises(ContextMeshError) as failure:
+        model.complete(TASK)
+    assert failure.value.code == "model_output_limit"
+    assert "CONTEXTMESH_MAX_OUTPUT_TOKENS" in failure.value.message
     model.close()
 
 
 @pytest.mark.parametrize("status_code", [401, 429, 500])
 def test_sdk_does_not_retry_or_leak_provider_errors(status_code):
     provider = RecordingProvider(status_code, {"error": {"message": "secret prompt/key fixture"}})
-    model = model_with_transport(provider)
+    model = reasoning_with(provider)
     with pytest.raises(ContextMeshError) as error:
-        model.respond((), "sensitive user prompt")
+        model.complete(TASK)
     assert len(provider.requests) == 1
     assert (error.value.code, error.value.message) == (
         "provider_unavailable",
@@ -124,45 +147,86 @@ def test_sdk_does_not_retry_or_leak_provider_errors(status_code):
     model.close()
 
 
-@pytest.mark.parametrize("body", [response_body("incomplete"), response_body(content="")])
-def test_incomplete_or_empty_model_output_is_a_safe_failure(body):
-    model = model_with_transport(RecordingProvider(body=body))
-    with pytest.raises(ContextMeshError, match="provider is unavailable"):
-        model.respond((), "Hello")
+def test_timeout_is_safe_and_not_retried():
+    calls = []
+
+    def timeout(request):
+        calls.append(request)
+        raise httpx.ReadTimeout("private transport details", request=request)
+
+    model = reasoning_with(timeout)
+    with pytest.raises(ContextMeshError) as error:
+        model.complete(TASK)
+    assert (len(calls), error.value.code) == (1, "provider_unavailable")
     model.close()
 
 
 def test_missing_provider_never_constructs_sdk_or_falls_back():
-    model = OpenAIChatModel(
-        api_key="",
-        model="gpt-4.1-mini",
-        base_url="http://unused",
-        timeout=45,
-        max_output_tokens=1024,
+    model = OpenAIReasoningModel(
+        api_key="", model="gpt-4.1-mini", base_url="http://unused", timeout=45, max_output_tokens=1
     )
     with pytest.raises(ContextMeshError) as error:
-        model.respond((), "Hello")
+        model.complete(TASK)
     assert model.client is None
     assert error.value.code == "provider_not_configured"
 
 
-class TimeoutProvider:
-    def __init__(self):
-        self.timeout = None
-        self.calls = 0
+def embedding_body(*vectors):
+    data = [
+        {"object": "embedding", "index": index, "embedding": list(vector)}
+        for index, vector in enumerate(vectors)
+    ]
+    data.reverse()
+    return {
+        "object": "list",
+        "data": data,
+        "model": "fixture",
+        "usage": {"prompt_tokens": 2, "total_tokens": 2},
+    }
 
-    def __call__(self, request):
-        self.calls += 1
-        self.timeout = request.extensions["timeout"]
-        raise httpx.ReadTimeout("private transport details", request=request)
+
+def embeddings_with(handler):
+    return OpenAIEmbeddingModel(
+        provider="openrouter",
+        api_key="test-only",
+        model="vendor/embed",
+        base_url="http://provider.test/v1",
+        timeout=45,
+        client=sdk(handler),
+    )
 
 
-def test_sdk_timeout_is_bounded_and_failure_is_safe_without_retry():
-    provider = TimeoutProvider()
-    model = model_with_transport(provider)
-    with pytest.raises(ContextMeshError) as error:
-        model.respond((), "Hello")
-    assert provider.timeout == {"connect": 45, "read": 45, "write": 45, "pool": 45}
-    assert provider.calls == 1
-    assert error.value.code == "provider_unavailable"
+def test_embeddings_are_returned_in_input_order_with_model_identity():
+    provider = RecordingProvider(body=embedding_body((1.0, 0.0), (0.0, 1.0)))
+    model = embeddings_with(provider)
+    assert model.embed(["first", "second"]) == ((1.0, 0.0), (0.0, 1.0))
+    sent = (provider.requests[0]["model"], provider.requests[0]["input"], model.identity)
+    assert sent == ("vendor/embed", ["first", "second"], "openrouter:vendor/embed")
     model.close()
+
+
+def test_embedding_count_mismatch_or_error_is_a_safe_failure():
+    short = embeddings_with(RecordingProvider(body=embedding_body((1.0,))))
+    failing = embeddings_with(RecordingProvider(500, {"error": {"message": "private"}}))
+    for model in (short, failing):
+        with pytest.raises(ContextMeshError) as error:
+            model.embed(["a", "b"])
+        assert error.value.code == "provider_unavailable"
+        model.close()
+
+
+def test_rejected_embedding_input_is_permanent_not_retryable():
+    model = embeddings_with(RecordingProvider(400, {"error": {"message": "input too long"}}))
+    with pytest.raises(ContextMeshError) as error:
+        model.embed(["oversized"])
+    assert (error.value.code, error.value.retryable) == ("embedding_input_rejected", False)
+    model.close()
+
+
+def test_embeddings_without_credentials_are_not_configured():
+    model = OpenAIEmbeddingModel(
+        provider="openai", api_key="", model="m", base_url="http://unused", timeout=1
+    )
+    with pytest.raises(ContextMeshError) as error:
+        model.embed(["text"])
+    assert error.value.code == "provider_not_configured"

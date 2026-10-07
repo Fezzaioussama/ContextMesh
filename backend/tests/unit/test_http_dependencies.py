@@ -8,15 +8,17 @@ from uuid import uuid4
 
 import pytest
 from app.api import deps
-from app.api.deps import ChatDependencies, HealthDependencies
+from app.api.deps import ChatDependencies, HealthDependencies, SourceDependencies
 from app.api.errors import install_error_handlers
 from app.api.v1.endpoints.health import health_router
 from app.api.v1.router import api_router
 from app.core.security import Identity
 from app.domain.models import Conversation
+from app.services.agent.policy import AgentPolicy
 from app.services.chat_service import AssistantMetadata, ConversationService
 from app.services.health_service import HealthService
 from app.services.ports.health import DependencyHealth
+from app.services.sources import SourceService
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -25,7 +27,9 @@ ROOT = "/api/v1/assistant"
 
 def service_for(name: str) -> Mock:
     service = Mock(spec=ConversationService)
-    service.metadata.return_value = AssistantMetadata("openai", name, True, 1024)
+    service.metadata.return_value = AssistantMetadata(
+        "openai", name, "embed", True, 1024, AgentPolicy()
+    )
     now = datetime.now(UTC)
     service.create.return_value = Conversation(uuid4(), name, now, now)
     return service
@@ -36,10 +40,12 @@ def client_for(service: ConversationService, identity: Identity, database: Depen
     install_error_handlers(app)
     chat = ChatDependencies(service, identity)
     health = HealthDependencies(HealthService(database))
+    sources = SourceDependencies(Mock(spec=SourceService, max_upload_bytes=1000))
     app.dependency_overrides.update(
         {
             deps.conversation_service: chat.conversation_service,
             deps.principal: chat.principal,
+            deps.source_service: sources.source_service,
             deps.health_service: health.health_service,
         }
     )

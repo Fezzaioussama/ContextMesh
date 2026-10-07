@@ -1,7 +1,6 @@
 """Serialized turn claims and atomic execution-token-fenced completion."""
 
 from datetime import UTC, datetime, timedelta
-from hashlib import sha256
 from uuid import UUID, uuid4
 
 from sqlalchemy import Connection, Engine, RowMapping, insert, select, update
@@ -15,6 +14,7 @@ from app.db.models.conversation import (
 from app.db.repositories.access import (
     require_conversation,
 )
+from app.db.repositories.answer_records import require_visible_evidence, save_answer
 from app.db.repositories.turn_values import (
     bounded_history,
     completed_result,
@@ -22,9 +22,10 @@ from app.db.repositories.turn_values import (
 )
 from app.domain.errors import idempotency_conflict, turn_in_progress
 from app.domain.models import (
+    AgentOutcome,
     Execution,
     Message,
-    ModelReply,
+    TurnInput,
     TurnResult,
 )
 
@@ -34,10 +35,22 @@ class TurnRepository:
         self.engine = engine
         self.lease_seconds = lease_seconds
 
+    def replay(
+        self, identity: Identity, conversation_id: UUID, key: str, turn: TurnInput
+    ) -> TurnResult | None:
+        """A completed turn is returned even if its source scope has since changed."""
+        with self.engine.begin() as connection:
+            require_conversation(connection, identity, conversation_id)
+            existing = self._existing(connection, conversation_id, key, turn.fingerprint)
+            if existing is None or existing["status"] != "completed":
+                return None
+            return completed_result(connection, existing)
+
     def claim(
-        self, identity: Identity, conversation_id: UUID, key: str, message: str
+        self, identity: Identity, conversation_id: UUID, key: str, turn: TurnInput
     ) -> Execution | TurnResult:
-        payload_hash = sha256(message.encode()).hexdigest()
+        payload_hash = turn.fingerprint
+        message = turn.message
         with self.engine.begin() as connection:
             require_conversation(connection, identity, conversation_id, lock=True)
             existing = self._existing(connection, conversation_id, key, payload_hash)
@@ -144,17 +157,21 @@ class TurnRepository:
             bounded_history(connection, conversation_id, turn_id),
         )
 
-    def complete(self, identity: Identity, execution: Execution, reply: ModelReply) -> TurnResult:
+    def complete(
+        self, identity: Identity, execution: Execution, outcome: AgentOutcome
+    ) -> TurnResult:
         with self.engine.begin() as connection:
             require_conversation(connection, identity, execution.conversation_id, lock=True)
             self._require_live_execution(connection, execution)
-            assistant = self._save_reply(connection, execution, reply)
+            require_visible_evidence(connection, outcome.answer)
+            assistant = self._save_reply(connection, execution, outcome)
             return TurnResult(
                 execution.turn_id,
                 execution.conversation_id,
                 execution.user_message,
                 assistant,
-                reply.usage,
+                outcome.usage,
+                outcome.trace,
             )
 
     def _require_live_execution(self, connection: Connection, execution: Execution) -> None:
@@ -168,27 +185,31 @@ class TurnRepository:
             raise turn_in_progress()
 
     def _save_reply(
-        self, connection: Connection, execution: Execution, reply: ModelReply
+        self, connection: Connection, execution: Execution, outcome: AgentOutcome
     ) -> Message:
         now = datetime.now(UTC)
-        message = Message(uuid4(), execution.turn_id, "assistant", reply.content, now)
+        content = outcome.answer.text
+        message = Message(
+            uuid4(), execution.turn_id, "assistant", content, now, outcome.answer, outcome.trace
+        )
         connection.execute(
             insert(messages).values(
                 id=message.id,
                 conversation_id=execution.conversation_id,
                 turn_id=execution.turn_id,
                 role="assistant",
-                content=reply.content,
+                content=content,
                 created_at=now,
             )
         )
+        save_answer(connection, message.id, outcome)
         connection.execute(
             update(turns)
             .where(turns.c.id == execution.turn_id)
             .values(
                 status="completed",
-                input_tokens=reply.usage.input_tokens,
-                output_tokens=reply.usage.output_tokens,
+                input_tokens=outcome.usage.input_tokens,
+                output_tokens=outcome.usage.output_tokens,
             )
         )
         connection.execute(
@@ -198,7 +219,7 @@ class TurnRepository:
         )
         return message
 
-    def fail(self, identity: Identity, execution: Execution) -> None:
+    def fail(self, identity: Identity, execution: Execution, code: str) -> None:
         with self.engine.begin() as connection:
             require_conversation(connection, identity, execution.conversation_id, lock=True)
             connection.execute(
@@ -208,5 +229,5 @@ class TurnRepository:
                     turns.c.execution_token == execution.token,
                     turns.c.status == "running",
                 )
-                .values(status="failed", safe_error_code="provider_unavailable")
+                .values(status="failed", safe_error_code=code[:50])
             )

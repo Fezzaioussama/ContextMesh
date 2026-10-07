@@ -30,6 +30,10 @@ def test_idempotency_key_has_a_bounded_nonempty_length(key):
         {"max_output_tokens": 4097},
         {"provider_timeout_seconds": 46},
         {"turn_lease_seconds": 45},
+        {"agent_deadline_seconds": 90, "turn_lease_seconds": 90},
+        {"agent_deadline_seconds": 5},
+        {"max_upload_bytes": 10_000_001},
+        {"job_lease_seconds": 45},
         {"database_url": "sqlite://"},
     ],
 )

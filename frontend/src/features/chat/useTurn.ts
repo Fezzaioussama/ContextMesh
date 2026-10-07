@@ -10,17 +10,26 @@ function initialDraft(id: string, suggestion: string): string {
   return suggestion;
 }
 
+function sameScope(left: string[] | null, right: string[] | null): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 function prepareAttempt(
   previous: PendingAttempt | null,
   message: string,
+  sourceIds: string[] | null,
 ): PendingAttempt {
-  if (previous !== null && previous.message === message) return previous;
-  return { message, key: crypto.randomUUID() };
+  if (previous === null) return { message, sourceIds, key: crypto.randomUUID() };
+  const unchanged =
+    previous.message === message && sameScope(previous.sourceIds, sourceIds);
+  if (unchanged) return previous;
+  return { message, sourceIds, key: crypto.randomUUID() };
 }
 
 export function useTurn(
   id: string,
   suggestion: string,
+  scope: string[] | null,
   onComplete: (turn: CompletedTurn) => void,
 ) {
   const [draft, setDraft] = useState(() => initialDraft(id, suggestion));
@@ -50,7 +59,7 @@ export function useTurn(
     if (message.length === 0) return;
     const controller = new AbortController();
     active.current = controller;
-    attempt.current = prepareAttempt(attempt.current, message);
+    attempt.current = prepareAttempt(attempt.current, message, scope);
     saveAttempt(id, attempt.current);
     setPending(true);
     setError("");
@@ -61,7 +70,7 @@ export function useTurn(
     try {
       const turn = await sendMessage(
         id,
-        current.message,
+        { message: current.message, sourceIds: current.sourceIds },
         current.key,
         controller.signal,
       );

@@ -1,5 +1,28 @@
 name: contextmesh
 
+x-backend-environment: &backend-environment
+  CONTEXTMESH_DATABASE_URL: postgresql+psycopg://contextmesh:contextmesh@postgres:5432/contextmesh
+  CONTEXTMESH_QDRANT_URL: http://qdrant:6333
+  CONTEXTMESH_BLOB_DIR: /data/blobs
+  CONTEXTMESH_DEV_SUBJECT: "${CONTEXTMESH_DEV_SUBJECT:-local-user}"
+  CONTEXTMESH_DEV_WORKSPACE_ID: "${CONTEXTMESH_DEV_WORKSPACE_ID:-00000000-0000-0000-0000-000000000001}"
+  CONTEXTMESH_ALLOWED_ORIGINS: '${CONTEXTMESH_ALLOWED_ORIGINS:-["http://localhost:5173","http://127.0.0.1:5173"]}'
+  CONTEXTMESH_PROVIDER_TIMEOUT_SECONDS: "${CONTEXTMESH_PROVIDER_TIMEOUT_SECONDS:-45}"
+  CONTEXTMESH_AGENT_DEADLINE_SECONDS: "${CONTEXTMESH_AGENT_DEADLINE_SECONDS:-60}"
+  CONTEXTMESH_TURN_LEASE_SECONDS: "${CONTEXTMESH_TURN_LEASE_SECONDS:-90}"
+  CONTEXTMESH_JOB_LEASE_SECONDS: "${CONTEXTMESH_JOB_LEASE_SECONDS:-90}"
+  CONTEXTMESH_MAX_OUTPUT_TOKENS: "${CONTEXTMESH_MAX_OUTPUT_TOKENS:-4096}"
+  CONTEXTMESH_MAX_UPLOAD_BYTES: "${CONTEXTMESH_MAX_UPLOAD_BYTES:-2000000}"
+  CONTEXTMESH_MODEL_PROVIDER: "${CONTEXTMESH_MODEL_PROVIDER:-openai}"
+  OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+  OPENAI_MODEL: "${OPENAI_MODEL:-gpt-4.1-mini}"
+  OPENAI_EMBEDDING_MODEL: "${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}"
+  OPENAI_BASE_URL: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+  OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+  OPENROUTER_MODEL: "${OPENROUTER_MODEL:-openai/gpt-4.1-mini}"
+  OPENROUTER_EMBEDDING_MODEL: "${OPENROUTER_EMBEDDING_MODEL:-openai/text-embedding-3-small}"
+  OPENROUTER_BASE_URL: "${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}"
+
 services:
   postgres:
     image: postgres:16
@@ -17,35 +40,49 @@ services:
       timeout: 3s
       retries: 30
 
+  qdrant:
+    image: qdrant/qdrant:v1.19.1
+    ports:
+      - "127.0.0.1:6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333 && printf \"GET /readyz HTTP/1.0\\r\\n\\r\\n\" >&3 && grep -q 200 <&3'"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
   api:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    environment:
-      CONTEXTMESH_DATABASE_URL: postgresql+psycopg://contextmesh:contextmesh@postgres:5432/contextmesh
-      CONTEXTMESH_DEV_SUBJECT: "${CONTEXTMESH_DEV_SUBJECT:-local-user}"
-      CONTEXTMESH_DEV_WORKSPACE_ID: "${CONTEXTMESH_DEV_WORKSPACE_ID:-00000000-0000-0000-0000-000000000001}"
-      CONTEXTMESH_ALLOWED_ORIGINS: '${CONTEXTMESH_ALLOWED_ORIGINS:-["http://localhost:5173","http://127.0.0.1:5173"]}'
-      CONTEXTMESH_PROVIDER_TIMEOUT_SECONDS: "${CONTEXTMESH_PROVIDER_TIMEOUT_SECONDS:-45}"
-      CONTEXTMESH_TURN_LEASE_SECONDS: "${CONTEXTMESH_TURN_LEASE_SECONDS:-90}"
-      CONTEXTMESH_MAX_OUTPUT_TOKENS: "${CONTEXTMESH_MAX_OUTPUT_TOKENS:-1024}"
-      CONTEXTMESH_MODEL_PROVIDER: "${CONTEXTMESH_MODEL_PROVIDER:-openai}"
-      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
-      OPENAI_MODEL: "${OPENAI_MODEL:-gpt-4.1-mini}"
-      OPENAI_BASE_URL: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
-      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
-      OPENROUTER_MODEL: "${OPENROUTER_MODEL:-openai/gpt-4.1-mini}"
-      OPENROUTER_BASE_URL: "${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}"
+    environment: *backend-environment
     ports:
       - "127.0.0.1:8000:8000"
+    volumes:
+      - blob_data:/data/blobs
     depends_on:
       postgres:
+        condition: service_healthy
+      qdrant:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
       interval: 5s
       timeout: 4s
       retries: 20
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    entrypoint: ["sh", "/app/backend/scripts/start_worker.sh"]
+    environment: *backend-environment
+    volumes:
+      - blob_data:/data/blobs
+    depends_on:
+      api:
+        condition: service_healthy
 
   frontend:
     build:
@@ -61,3 +98,5 @@ services:
 
 volumes:
   postgres_data:
+  qdrant_data:
+  blob_data:

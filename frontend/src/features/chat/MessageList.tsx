@@ -2,10 +2,12 @@ import { useEffect, useRef } from "react";
 import type { Message } from "../../api/contracts";
 import { Icon } from "../../components/Icon";
 import { Loading } from "../../components/Feedback";
+import { AGENT_NAME } from "./agentName";
+import { AnswerView } from "./AnswerView";
 
 function author(role: Message["role"]): string {
   if (role === "user") return "You";
-  return "Foundation Assistant";
+  return AGENT_NAME;
 }
 
 function timestamp(value: string): string {
@@ -46,7 +48,7 @@ export function MessageList({
                   {timestamp(message.created_at)}
                 </time>
               </div>
-              <div className="message-content">{message.content}</div>
+              <MessageContent message={message} />
             </div>
           </article>
         ))}
@@ -57,6 +59,19 @@ export function MessageList({
   );
 }
 
+function MessageContent({ message }: { message: Message }) {
+  if (message.answer === null)
+    return <div className="message-content">{message.content}</div>;
+  return (
+    <AnswerView
+      messageId={message.id}
+      answer={message.answer}
+      content={message.content}
+      trace={message.trace}
+    />
+  );
+}
+
 function MessageAvatar({ role }: { role: Message["role"] }) {
   if (role === "user") return <span>Y</span>;
   return <Icon name="mesh" />;
@@ -64,5 +79,5 @@ function MessageAvatar({ role }: { role: Message["role"] }) {
 
 function PendingMessage({ pending }: { pending: boolean }) {
   if (!pending) return null;
-  return <Loading>Foundation Assistant is responding…</Loading>;
+  return <Loading>Planning, searching sources, and checking citations…</Loading>;
 }

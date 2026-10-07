@@ -3,7 +3,7 @@ import { useEffect } from "react";
 function focusableElements(sidebar: HTMLElement): HTMLElement[] {
   return [
     ...sidebar.querySelectorAll<HTMLElement>(
-      'button:not(:disabled), a[href], [tabindex="0"]',
+      'button:not(:disabled), input:not(:disabled), summary, a[href], [tabindex="0"]',
     ),
   ];
 }
@@ -42,10 +42,14 @@ function handleKey(
   if (event.key === "Tab") trapTab(event, sidebar);
 }
 
-export function useDrawerAccessibility(open: boolean, close: () => void) {
+export function useDrawerAccessibility(
+  open: boolean,
+  close: () => void,
+  drawerId: string,
+) {
   useEffect(() => {
     if (!open) return;
-    const sidebar = document.getElementById("conversation-sidebar");
+    const sidebar = document.getElementById(drawerId);
     if (sidebar === null) return;
     const previous = document.activeElement;
     focusStart(sidebar);
@@ -56,5 +60,5 @@ export function useDrawerAccessibility(open: boolean, close: () => void) {
       document.removeEventListener("keydown", onKeyDown);
       if (previous instanceof HTMLElement) previous.focus();
     };
-  }, [open, close]);
+  }, [open, close, drawerId]);
 }

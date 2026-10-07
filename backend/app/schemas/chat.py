@@ -7,9 +7,11 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
 
 from app.domain.validation import (
+    MAX_SOURCE_FILTER,
     normalized_message,
     normalized_title,
 )
+from app.schemas.answers import AnswerResponse, TraceStage
 
 
 class CreateConversation(BaseModel):
@@ -23,8 +25,11 @@ class CreateConversation(BaseModel):
 
 
 class SendMessage(BaseModel):
+    """An omitted source filter means every eligible source; an empty list is invalid."""
+
     model_config = ConfigDict(extra="forbid")
     message: StrictStr
+    source_ids: list[UUID] | None = Field(default=None, min_length=1, max_length=MAX_SOURCE_FILTER)
 
     @field_validator("message")
     @classmethod
@@ -47,6 +52,8 @@ class MessageResponse(BaseModel):
     role: Literal["user", "assistant"]
     content: str
     created_at: datetime
+    answer: AnswerResponse | None
+    trace: list[TraceStage]
 
 
 class ConversationPage(BaseModel):
@@ -67,33 +74,35 @@ class UsageResponse(BaseModel):
     output_tokens: int
 
 
-class TraceStage(BaseModel):
-    stage: str = "respond"
-    summary: str = "Generated a reply with the configured model."
-
-
 class TurnResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     turn_id: UUID
     conversation_id: UUID
-    mode: Literal["provider_chat"] = "provider_chat"
+    mode: Literal["agentic_rag"] = "agentic_rag"
     user_message: MessageResponse
     assistant_message: MessageResponse
     usage: UsageResponse
-    trace: list[TraceStage] = Field(default_factory=lambda: [TraceStage()])
+    trace: list[TraceStage]
 
 
 class AgentLimits(BaseModel):
     max_message_chars: int = 8000
-    max_history_messages: int = 20
+    max_history_messages: int
     max_output_tokens: int
+    max_retrieval_rounds: int
+    max_query_variants: int
+    max_repairs: int
+    deadline_seconds: float
+    max_upload_bytes: int
 
 
 class AgentMetadata(BaseModel):
-    name: str = "Foundation Assistant"
-    mode: Literal["provider_chat"] = "provider_chat"
+    name: str = "ContextMesh Agent"
+    mode: Literal["agentic_rag"] = "agentic_rag"
     provider: str = "openai"
     model: str
+    embedding_model: str
     configured: bool
-    retrieval_enabled: bool = False
+    retrieval_enabled: bool = True
+    supported_media_types: list[str] = [".md", ".markdown", ".txt"]
     limits: AgentLimits

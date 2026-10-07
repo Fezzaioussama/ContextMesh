@@ -17,6 +17,7 @@ from app.db.repositories.access import (
     require_membership,
     scoped_conversations,
 )
+from app.db.repositories.answer_records import with_answers
 from app.db.repositories.paging import (
     decode_cursor,
     page,
@@ -72,5 +73,5 @@ class ConversationRepository:
         with self.engine.begin() as connection:
             require_conversation(connection, identity, conversation_id)
             rows = connection.execute(query.limit(limit + 1)).mappings().all()
-            items = [message_value(row) for row in rows]
+            items = with_answers(connection, [message_value(row) for row in rows])
         return page(items, limit, scope)

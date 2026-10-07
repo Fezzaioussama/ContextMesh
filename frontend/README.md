@@ -1,8 +1,10 @@
 # ContextMesh frontend
 
-The React/TypeScript UI provides saved conversations with the Foundation
-Assistant. It consumes the HTTP contract in
-[initial-chat.md](../docs/initial-chat.md); document retrieval remains planned.
+The React/TypeScript UI provides saved conversations with the ContextMesh Agent,
+a **Sources** drawer for creating sources and uploading Markdown/text files (with
+live indexing status), a per-message search-scope picker, and grounded answers
+that show status, cited claims, evidence passages, gaps, and the agent's trace.
+It consumes only the backend HTTP API (see `/docs` on the running API).
 
 Install Node.js 24+ and run these commands from the repository root:
 
@@ -32,4 +34,4 @@ Run `make quality` from the repository root for both gates.
 The [frontend Dockerfile](Dockerfile) uses the root npm workspace manifest and
 lockfile. Root Compose sets the proxy to the API service and runs Vite on
 `0.0.0.0` inside the container, with a localhost published port. Use `make dev`
-for the combined frontend/API/PostgreSQL development stack.
+for the combined frontend, API, worker, PostgreSQL, and Qdrant stack.

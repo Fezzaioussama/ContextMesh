@@ -36,7 +36,7 @@ describe("assistant conversations", () => {
       }),
     );
     const { container } = render(<App />);
-    const input = await screen.findByLabelText("Message Foundation Assistant");
+    const input = await screen.findByLabelText("Message ContextMesh Agent");
     await waitFor(() =>
       expect((input as HTMLTextAreaElement).disabled).toBe(false),
     );
@@ -63,7 +63,7 @@ describe("assistant conversations", () => {
       }),
     );
     render(<App />);
-    const input = await screen.findByLabelText("Message Foundation Assistant");
+    const input = await screen.findByLabelText("Message ContextMesh Agent");
     await waitFor(() =>
       expect((input as HTMLTextAreaElement).disabled).toBe(false),
     );
@@ -90,7 +90,7 @@ describe("assistant conversations", () => {
     render(<App />);
     expect(await screen.findByText("Connect your model provider")).toBeTruthy();
     expect(screen.getByText("OPENAI_API_KEY")).toBeTruthy();
-    const input = await screen.findByLabelText("Message Foundation Assistant");
+    const input = await screen.findByLabelText("Message ContextMesh Agent");
     expect((input as HTMLTextAreaElement).disabled).toBe(true);
     expect(
       (
@@ -120,7 +120,7 @@ describe("assistant conversations", () => {
     );
     render(<App />);
     const user = userEvent.setup();
-    const input = await screen.findByLabelText("Message Foundation Assistant");
+    const input = await screen.findByLabelText("Message ContextMesh Agent");
     await waitFor(() =>
       expect((input as HTMLTextAreaElement).disabled).toBe(false),
     );
@@ -140,7 +140,7 @@ describe("assistant conversations", () => {
     vi.stubGlobal("fetch", createHttp(emptyHistory));
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
-    await screen.findByLabelText("Message Foundation Assistant");
+    await screen.findByLabelText("Message ContextMesh Agent");
     expect(localStorage.getItem("contextmesh.selected-conversation")).toBe(
       first.id,
     );

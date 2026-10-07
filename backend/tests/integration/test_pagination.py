@@ -10,8 +10,9 @@ from app.db.models.conversation import (
     conversations,
     messages,
 )
-from app.domain.models import ModelReply, Usage
+from app.domain.models import TurnInput
 from sqlalchemy import update
+from support import fixture_outcome
 
 pytestmark = pytest.mark.integration
 
@@ -35,8 +36,8 @@ def test_message_pages_advance_in_ascending_stable_order(
     repository, identity, engine, turn_repository
 ):
     conversation = repository.create(identity, "Page history")
-    execution = turn_repository.claim(identity, conversation.id, "key", "Question")
-    result = turn_repository.complete(identity, execution, ModelReply("Answer", Usage(1, 1)))
+    execution = turn_repository.claim(identity, conversation.id, "key", TurnInput("Question"))
+    result = turn_repository.complete(identity, execution, fixture_outcome("Answer"))
     with engine.begin() as connection:
         connection.execute(
             update(messages)

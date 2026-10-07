@@ -23,6 +23,7 @@ body {
   margin: 0;
 }
 button,
+input,
 textarea {
   font: inherit;
 }
@@ -38,6 +39,9 @@ textarea {
   -webkit-tap-highlight-color: transparent;
 }
 button:focus-visible,
+input:focus-visible,
+summary:focus-visible,
+a:focus-visible,
 textarea:focus-visible {
   outline: 3px solid #49b7a4;
   outline-offset: 3px;
@@ -577,8 +581,7 @@ button {
   color: #86beaf;
 }
 .sidebar-close,
-.mobile-menu,
-.sidebar-backdrop {
+.mobile-menu {
   display: none;
 }
 .sr-only {
@@ -652,14 +655,6 @@ button {
   .sidebar[data-open="true"] {
     transform: translateX(0);
     visibility: visible;
-  }
-  .sidebar-backdrop {
-    display: block;
-    position: fixed;
-    inset: 0;
-    z-index: 20;
-    border: 0;
-    background: #08191e80;
   }
   .sidebar-close {
     display: inline-flex;

@@ -1,13 +1,20 @@
-"""OpenAI/OpenRouter Responses adapter; no tools, stored state, or SDK retries."""
+"""OpenAI/OpenRouter Responses adapter for strict structured output; no tools or retries."""
+
+import json
+import re
 
 from openai import OpenAI, OpenAIError
 
-from app.ai.prompts.system import INSTRUCTIONS
 from app.domain.errors import (
+    model_output_invalid,
+    model_output_limit,
     provider_not_configured,
     provider_unavailable,
 )
-from app.domain.models import Message, ModelReply, Usage
+from app.domain.models import Usage
+from app.services.ports.models import StructuredReply, StructuredTask
+
+FENCED = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 
 
 def user_input(content: str) -> dict:
@@ -18,19 +25,7 @@ def user_input(content: str) -> dict:
     }
 
 
-def history_input(item: Message) -> dict:
-    if item.role == "user":
-        return user_input(item.content)
-    return {
-        "id": f"msg_{item.id.hex}",
-        "type": "message",
-        "role": "assistant",
-        "status": "completed",
-        "content": [{"type": "output_text", "text": item.content, "annotations": []}],
-    }
-
-
-class OpenAIChatModel:
+class OpenAIReasoningModel:
     def __init__(
         self,
         *,
@@ -52,36 +47,70 @@ class OpenAIChatModel:
     def configured(self) -> bool:
         return self._configured
 
-    def respond(self, history: tuple[Message, ...], message: str) -> ModelReply:
+    def complete(self, task: StructuredTask) -> StructuredReply:
         if not self.configured:
             raise provider_not_configured()
         try:
-            response = self._request(history, message)
+            response = self._request(task)
         except (OpenAIError, ValueError):
             raise provider_unavailable() from None
-        return self._reply(response)
+        return StructuredReply(_data(response), _usage(response))
 
-    def _request(self, history, message):
-        inputs = [history_input(item) for item in history]
-        inputs.append(user_input(message))
+    def _request(self, task: StructuredTask):
         return self.client.responses.create(
             model=self.model,
-            instructions=INSTRUCTIONS,
-            input=inputs,
+            instructions=task.instructions,
+            input=[user_input(task.content)],
             store=False,
             max_output_tokens=self.max_output_tokens,
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": task.name,
+                    "schema": dict(task.schema),
+                    "strict": True,
+                }
+            },
+            timeout=task.timeout_seconds,
         )
-
-    def _reply(self, response) -> ModelReply:
-        if response.status != "completed":
-            raise provider_unavailable()
-        content = response.output_text.strip()
-        if not content:
-            raise provider_unavailable()
-        if response.usage is None:
-            raise provider_unavailable()
-        return ModelReply(content, Usage(response.usage.input_tokens, response.usage.output_tokens))
 
     def close(self) -> None:
         if self.client is not None:
             self.client.close()
+
+
+def _data(response) -> dict:
+    _require_completed(response)
+    try:
+        value = json.loads(_unfenced(response.output_text))
+    except json.JSONDecodeError:
+        raise model_output_invalid() from None
+    if not isinstance(value, dict):
+        raise model_output_invalid()
+    return value
+
+
+def _require_completed(response) -> None:
+    """Reasoning models spend hidden tokens; a truncated reply is a budget problem."""
+    if response.status == "completed":
+        return
+    if _truncated(response):
+        raise model_output_limit()
+    raise provider_unavailable()
+
+
+def _truncated(response) -> bool:
+    details = getattr(response, "incomplete_details", None)
+    return details is not None and details.reason == "max_output_tokens"
+
+
+def _unfenced(text: str) -> str:
+    stripped = text.strip()
+    fenced = FENCED.match(stripped)
+    return fenced.group(1) if fenced else stripped
+
+
+def _usage(response) -> Usage:
+    if response.usage is None:
+        raise provider_unavailable()
+    return Usage(response.usage.input_tokens, response.usage.output_tokens)

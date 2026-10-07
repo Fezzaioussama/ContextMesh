@@ -1,20 +1,29 @@
-"""Construct the supported Responses adapter from resolved provider arguments."""
+"""Construct the supported provider adapters from resolved provider arguments."""
 
-from app.ai.llm.openai import OpenAIChatModel
+from app.ai.llm.embeddings import OpenAIEmbeddingModel
+from app.ai.llm.openai import OpenAIReasoningModel
 
 
-def create_chat_model(
+def create_reasoning_model(
     *,
     api_key: str,
     model: str,
     base_url: str,
     timeout: float,
     max_output_tokens: int,
-) -> OpenAIChatModel:
-    return OpenAIChatModel(
+) -> OpenAIReasoningModel:
+    return OpenAIReasoningModel(
         api_key=api_key,
         model=model,
         base_url=base_url,
         timeout=timeout,
         max_output_tokens=max_output_tokens,
+    )
+
+
+def create_embedding_model(
+    *, provider: str, api_key: str, model: str, base_url: str, timeout: float
+) -> OpenAIEmbeddingModel:
+    return OpenAIEmbeddingModel(
+        provider=provider, api_key=api_key, model=model, base_url=base_url, timeout=timeout
     )

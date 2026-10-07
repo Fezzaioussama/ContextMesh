@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import pytest
 from app.bootstrap.api import create_app
+from app.bootstrap.knowledge import ingestion_worker
 from app.core.config import Settings
 from app.core.security import Identity
 from app.db.repositories.conversation_repository import (
@@ -15,25 +16,11 @@ from app.db.repositories.conversation_repository import (
 )
 from app.db.repositories.turn_repository import TurnRepository
 from app.db.repositories.user_repository import DevelopmentIdentityRepository
-from app.domain.models import ModelReply, Usage
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from support import memory_services
 
 BACKEND = Path(__file__).resolve().parents[1]
-
-
-class FixtureModel:
-    configured = True
-
-    def __init__(self):
-        self.calls = []
-        self.failure = None
-
-    def respond(self, history, message):
-        self.calls.append((history, message))
-        if self.failure is not None:
-            raise self.failure
-        return ModelReply("Fixture reply", Usage(12, 8))
 
 
 @pytest.fixture(scope="session")
@@ -74,19 +61,39 @@ def turn_repository(engine, repository):
 
 
 @pytest.fixture
-def model():
-    return FixtureModel()
+def doubles():
+    return memory_services()
 
 
 @pytest.fixture
-def settings(database_url):
-    return Settings(database_url=database_url, api_key="", _env_file=None)
+def services(doubles):
+    return doubles[0]
 
 
 @pytest.fixture
-def client(settings, identity, model):
-    with TestClient(create_app(settings, model, identity)) as value:
+def reasoning(doubles):
+    return doubles[1]
+
+
+@pytest.fixture
+def embeddings(doubles):
+    return doubles[2]
+
+
+@pytest.fixture
+def settings(database_url, tmp_path):
+    return Settings(database_url=database_url, api_key="", blob_dir=tmp_path, _env_file=None)
+
+
+@pytest.fixture
+def client(settings, identity, services):
+    with TestClient(create_app(settings, services, identity)) as value:
         yield value
+
+
+@pytest.fixture
+def worker(engine, settings, services):
+    return ingestion_worker(engine, settings, services)
 
 
 @pytest.fixture

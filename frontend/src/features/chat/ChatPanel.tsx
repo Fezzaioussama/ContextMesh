@@ -1,7 +1,9 @@
-import type { AgentMetadata, CompletedTurn } from "../../api/contracts";
+import type { AgentMetadata, CompletedTurn, Source } from "../../api/contracts";
 import { ErrorNotice, Loading } from "../../components/Feedback";
 import { Composer } from "./Composer";
 import { MessageList } from "./MessageList";
+import { ScopePicker } from "./ScopePicker";
+import type { SearchScope } from "./ScopePicker";
 import { useHistory } from "./useHistory";
 import { useTurn } from "./useTurn";
 import { Welcome } from "./Welcome";
@@ -10,11 +12,14 @@ interface ChatPanelProps {
   conversationId: string;
   initialDraft: string;
   agent: AgentMetadata | null;
+  sources: Source[];
+  scope: SearchScope;
+  changeScope: (scope: string[] | null) => void;
   onComplete: () => void;
 }
 
-function canSend(agent: AgentMetadata | null): boolean {
-  if (agent === null) return false;
+function canSend(agent: AgentMetadata | null, scope: SearchScope): boolean {
+  if (agent === null || scope.unavailable) return false;
   return agent.configured;
 }
 
@@ -29,9 +34,16 @@ export function ChatPanel(props: ChatPanelProps) {
     history.complete(turn);
     props.onComplete();
   }
-  const turn = useTurn(props.conversationId, props.initialDraft, complete);
+  const turn = useTurn(
+    props.conversationId,
+    props.initialDraft,
+    props.scope.ids,
+    complete,
+  );
   const unavailable =
-    !canSend(props.agent) || history.loading || history.error.length > 0;
+    !canSend(props.agent, props.scope) ||
+    history.loading ||
+    history.error.length > 0;
   const disabled = unavailable || turn.pending;
 
   return (
@@ -51,6 +63,11 @@ export function ChatPanel(props: ChatPanelProps) {
           retry={turn.submit}
           label="Retry message"
         />
+        <ScopePicker
+          sources={props.sources}
+          scope={props.scope}
+          change={props.changeScope}
+        />
         <Composer
           draft={turn.draft}
           change={turn.setDraft}
@@ -60,7 +77,8 @@ export function ChatPanel(props: ChatPanelProps) {
           maxLength={messageLimit(props.agent)}
         />
         <p className="composer-disclaimer">
-          AI responses can be mistaken. Check important details.
+          Answers cite indexed passages. Check important details in the cited
+          source.
         </p>
       </div>
     </>

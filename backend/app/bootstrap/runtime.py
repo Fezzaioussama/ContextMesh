@@ -8,8 +8,10 @@ from fastapi import FastAPI
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
-from app.bootstrap.conversations import conversation_service, create_model
+from app.bootstrap.conversations import conversation_service
+from app.bootstrap.knowledge import source_service
 from app.bootstrap.schema import REQUIRED_TABLES, SCHEMA_REVISION
+from app.bootstrap.services import ExternalServices, create_services
 from app.core.config import Settings
 from app.core.security import Identity
 from app.db.health import DatabaseHealth
@@ -17,12 +19,13 @@ from app.db.repositories.user_repository import DevelopmentIdentityRepository
 from app.db.session import create_database_engine
 from app.services.chat_service import ConversationService
 from app.services.health_service import HealthService
-from app.services.ports.models import ChatModel
+from app.services.sources import SourceService
 
 
 @dataclass(frozen=True)
 class ApiRuntime:
     conversations: ConversationService
+    sources: SourceService
     health: HealthService
     identity_repository: DevelopmentIdentityRepository
     resources: ExitStack
@@ -37,15 +40,15 @@ class ApiRuntime:
         self.resources.close()
 
 
-def build_runtime(config: Settings, model: ChatModel | None) -> ApiRuntime:
+def build_runtime(config: Settings, services: ExternalServices | None) -> ApiRuntime:
     with ExitStack() as resources:
         engine = create_database_engine(config.database_url)
         resources.callback(engine.dispose)
-        if model is None:
-            model = create_model(config)
-            resources.callback(model.close)
+        if services is None:
+            services = create_services(config, resources)
         return ApiRuntime(
-            conversation_service(engine, config, model),
+            conversation_service(engine, config, services),
+            source_service(engine, config),
             HealthService(DatabaseHealth(engine, REQUIRED_TABLES, SCHEMA_REVISION)),
             DevelopmentIdentityRepository(engine),
             resources.pop_all(),

@@ -7,17 +7,33 @@ from uuid import uuid4
 import pytest
 from app.core.exceptions import ContextMeshError
 from app.domain.models import Conversation, Page
+from app.services.agent.policy import AgentPolicy
 from app.services.assistant import Assistant
 from app.services.chat_service import ConversationService
 from app.services.ports.conversations import ConversationStore, TurnStore
+from app.services.ports.retrieval import AnswerWorkflow, SourceCatalog
+from support import ScriptedReasoning
+
+
+@pytest.fixture
+def model():
+    return ScriptedReasoning()
 
 
 @pytest.fixture
 def service_and_store(model):
     store = Mock(spec=ConversationStore)
-    assistant = Assistant(Mock(spec=TurnStore), model)
+    assistant = Assistant(
+        Mock(spec=TurnStore), Mock(spec=SourceCatalog), Mock(spec=AnswerWorkflow), model
+    )
     service = ConversationService(
-        store, assistant, provider="openrouter", model_name="fixture", max_output_tokens=1024
+        store,
+        assistant,
+        provider="openrouter",
+        model_name="fixture",
+        embedding_model="vendor/embed",
+        max_output_tokens=1024,
+        policy=AgentPolicy(),
     )
     return service, store
 
@@ -77,9 +93,9 @@ def test_metadata_reflects_current_provider_availability(service_and_store, mode
     initial = service.metadata()
     model.configured = False
     current = service.metadata()
-    assert (initial.provider, initial.model, initial.max_output_tokens) == (
+    assert (initial.provider, initial.model, initial.embedding_model) == (
         "openrouter",
         "fixture",
-        1024,
+        "vendor/embed",
     )
     assert (initial.configured, current.configured) == (True, False)

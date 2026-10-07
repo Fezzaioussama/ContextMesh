@@ -101,7 +101,7 @@ describe("saved conversation boundaries", () => {
       }),
     );
     render(<App />);
-    const input = await screen.findByLabelText("Message Foundation Assistant");
+    const input = await screen.findByLabelText("Message ContextMesh Agent");
     await waitFor(() =>
       expect((input as HTMLTextAreaElement).disabled).toBe(false),
     );
@@ -118,7 +118,7 @@ describe("saved conversation boundaries", () => {
       screen.getByRole("button", { name: "Open conversation: Planning notes" }),
     );
     const restored = await screen.findByLabelText(
-      "Message Foundation Assistant",
+      "Message ContextMesh Agent",
     );
     await waitFor(() =>
       expect((restored as HTMLTextAreaElement).disabled).toBe(false),
@@ -149,7 +149,7 @@ describe("saved conversation boundaries", () => {
       }),
     );
     render(<App />);
-    const input = await screen.findByLabelText("Message Foundation Assistant");
+    const input = await screen.findByLabelText("Message ContextMesh Agent");
     await waitFor(() =>
       expect((input as HTMLTextAreaElement).disabled).toBe(false),
     );
@@ -163,6 +163,7 @@ describe("saved conversation boundaries", () => {
   it("loads another page of saved conversations", async () => {
     vi.stubGlobal("fetch", async (input: string) => {
       if (input === "/api/v1/assistant") return json(agent);
+      if (input === "/api/v1/sources") return json({ items: [] });
       if (input.includes("cursor=next"))
         return json({ items: [second], next_cursor: null });
       return json({ items: [first], next_cursor: "next" });
