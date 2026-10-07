@@ -3,10 +3,10 @@
 import json
 from collections.abc import Callable, Mapping
 
-from app.domain.errors import agent_budget_exceeded, agent_deadline_exceeded
 from app.services.agent.policy import AgentPolicy
 from app.services.agent.state import AgentState
 from app.services.ports.models import ReasoningModel, StructuredReply, StructuredTask
+from app.services.rules.errors import agent_budget_exceeded, agent_deadline_exceeded
 
 
 class BudgetedModel:

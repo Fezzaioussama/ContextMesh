@@ -7,15 +7,15 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from app.bootstrap.api import create_app
-from app.bootstrap.knowledge import ingestion_worker
-from app.core.config import Settings
-from app.core.security import Identity
-from app.db.repositories.conversation_repository import (
+from app.data.db.repositories.conversation_repository import (
     ConversationRepository,
 )
-from app.db.repositories.turn_repository import TurnRepository
-from app.db.repositories.user_repository import DevelopmentIdentityRepository
+from app.data.db.repositories.turn_repository import TurnRepository
+from app.data.db.repositories.user_repository import DevelopmentIdentityRepository
+from app.setup.api import create_app
+from app.setup.knowledge import ingestion_worker
+from app.utils.config import Settings
+from app.utils.security import Identity
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from support import memory_services

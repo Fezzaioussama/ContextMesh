@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
-from app.domain.knowledge import ChunkDraft, ClaimedJob, Element, IndexTarget
+from app.services.rules.knowledge import ChunkDraft, ClaimedJob, Element, IndexTarget
 
 
 @dataclass(frozen=True)

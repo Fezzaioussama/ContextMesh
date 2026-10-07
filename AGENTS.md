@@ -12,6 +12,8 @@ worker processes. Read the relevant contracts before changing code:
 - `docs/quality.md`: product behavior, failure cases, and evaluation requirements.
 - `docs/engineering.md`: mandatory engineering limits and automated checks.
 - `docs/agents.md`: configured roles and the coordination workflow.
+- `docs/flows.md`: each user story traced file by file, with its log lines.
+- `backend/README.md`: the backend folder layout and what belongs where.
 
 Work only on the assigned milestone and files. Configuring agents and checks does
 not authorize application implementation. Planned integrations and tests must not
@@ -45,11 +47,24 @@ injection for integrations, repositories for persistence boundaries, Strategy fo
 interchangeable behavior, and explicit state transitions for workers and queries
 when these fit the accepted architecture. Explain any new pattern's purpose.
 
-Dependencies point `adapters -> application -> domain`. Domain code must not
-import frameworks, provider SDKs, persistence, transport, or orchestration code.
-Application code owns ports and must not import concrete adapters. Composition
-belongs in `bootstrap`; LangGraph is an adapter calling application services.
-The frontend uses HTTP contracts and never imports backend internals.
+The backend (`backend/app`) is organized as `controllers -> services -> data`:
+
+- `controllers/` translate HTTP (routes, `schemas/`, error mapping) and call
+  services only.
+- `services/` hold the use cases, one area per user story. They own their
+  interfaces in `services/ports/` and must not import `data`, `controllers`, or
+  `setup`. `services/rules/` holds pure business rules and imports only the
+  standard library, other rules, and `utils.exceptions`/`utils.security`.
+  LangGraph is used only in `services/agent/graph.py`, which sequences agent steps.
+- `data/` implements the ports: PostgreSQL (`db`), Qdrant (`vectors`), blobs,
+  model clients (`llm`), and the guarded web fetcher (`web`).
+- `utils/` (config, errors, security, logging, parsers) may be used by every
+  layer and imports nothing from `controllers`, `data`, or `setup`.
+- `setup/` is the only place that chooses concrete classes for the API and worker.
+
+Every user-story step logs a `flow_event` (`app/utils/logging.py`) with ids and
+counts only, and `docs/flows.md` is updated when a flow changes. The frontend
+uses HTTP contracts and never imports backend internals.
 
 Preserve ingestion/query separation, typed boundaries, canonical PostgreSQL
 visibility and publication, bounded agent execution, authorization checks, and

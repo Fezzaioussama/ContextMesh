@@ -1,7 +1,7 @@
 """Readiness policy independent of SQLAlchemy and HTTP."""
 
-from app.core.exceptions import ContextMeshError
 from app.services.ports.health import DependencyHealth
+from app.utils.exceptions import ContextMeshError
 
 
 class HealthService:

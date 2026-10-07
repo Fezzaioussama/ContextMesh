@@ -3,8 +3,7 @@
 from typing import Protocol
 from uuid import UUID
 
-from app.core.security import Identity
-from app.domain.models import (
+from app.services.rules.models import (
     AgentOutcome,
     Conversation,
     Execution,
@@ -13,6 +12,7 @@ from app.domain.models import (
     TurnInput,
     TurnResult,
 )
+from app.utils.security import Identity
 
 
 class ConversationStore(Protocol):

@@ -1,7 +1,7 @@
 """Integration isolation: the durable job queue is shared by every test workspace."""
 
 import pytest
-from app.db.models.knowledge import jobs
+from app.data.db.models.knowledge import jobs
 from sqlalchemy import update
 
 

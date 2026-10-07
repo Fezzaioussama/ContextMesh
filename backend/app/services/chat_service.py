@@ -3,12 +3,12 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from app.core.security import Identity
-from app.domain.models import Conversation, Message, Page, TurnResult
-from app.domain.validation import checked_page, normalized_title
 from app.services.agent.policy import AgentPolicy
 from app.services.assistant import Assistant
 from app.services.ports.conversations import ConversationStore
+from app.services.rules.models import Conversation, Message, Page, TurnResult
+from app.services.rules.validation import checked_page, normalized_title
+from app.utils.security import Identity
 
 
 @dataclass(frozen=True)

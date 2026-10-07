@@ -1,10 +1,10 @@
 """Chunking keeps sections apart, bounds size, and derives stable chunk identities."""
 
 import pytest
-from app.domain.chunking import ChunkingPolicy, chunk_elements, estimate_tokens
-from app.domain.errors import IngestionFailure
-from app.domain.knowledge import Element
-from app.parsers.blocks import BlockParser
+from app.services.rules.chunking import ChunkingPolicy, chunk_elements, estimate_tokens
+from app.services.rules.errors import IngestionFailure
+from app.services.rules.knowledge import Element
+from app.utils.parsers.blocks import BlockParser
 
 MARKDOWN = b"""# Platform handbook
 

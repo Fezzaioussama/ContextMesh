@@ -3,8 +3,8 @@
 from dataclasses import dataclass
 from typing import Protocol
 
-from app.domain.knowledge import ClaimedJob, WebsiteTarget
-from app.domain.uploads import UploadSpec
+from app.services.rules.knowledge import ClaimedJob, WebsiteTarget
+from app.services.rules.uploads import UploadSpec
 
 
 @dataclass(frozen=True)

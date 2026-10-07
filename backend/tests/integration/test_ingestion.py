@@ -6,14 +6,14 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
-from app.core.exceptions import ContextMeshError
-from app.db.models.knowledge import documents, index_generations, jobs, sources
-from app.db.repositories.indexing_repository import IndexingRepository
-from app.db.repositories.job_repository import JobRepository
-from app.db.repositories.retrieval_repository import RetrievalRepository
-from app.domain.answers import Locator
-from app.domain.errors import LeaseLost, provider_unavailable
-from app.domain.knowledge import ChunkDraft
+from app.data.db.models.knowledge import documents, index_generations, jobs, sources
+from app.data.db.repositories.indexing_repository import IndexingRepository
+from app.data.db.repositories.job_repository import JobRepository
+from app.data.db.repositories.retrieval_repository import RetrievalRepository
+from app.services.rules.answers import Locator
+from app.services.rules.errors import LeaseLost, provider_unavailable
+from app.services.rules.knowledge import ChunkDraft
+from app.utils.exceptions import ContextMeshError
 from sqlalchemy import select, update
 from support import create_source, drain, upload
 from support import documents as listed_documents

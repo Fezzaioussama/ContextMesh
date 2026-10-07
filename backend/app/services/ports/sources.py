@@ -3,8 +3,7 @@
 from typing import Protocol
 from uuid import UUID
 
-from app.core.security import Identity
-from app.domain.knowledge import (
+from app.services.rules.knowledge import (
     DocumentSummary,
     JobView,
     Passage,
@@ -12,7 +11,8 @@ from app.domain.knowledge import (
     SourceDraft,
     UploadReceipt,
 )
-from app.domain.uploads import UploadSpec
+from app.services.rules.uploads import UploadSpec
+from app.utils.security import Identity
 
 
 class SourceStore(Protocol):

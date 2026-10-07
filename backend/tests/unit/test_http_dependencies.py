@@ -7,18 +7,18 @@ from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
-from app.api import deps
-from app.api.deps import ChatDependencies, HealthDependencies, SourceDependencies
-from app.api.errors import install_error_handlers
-from app.api.v1.endpoints.health import health_router
-from app.api.v1.router import api_router
-from app.core.security import Identity
-from app.domain.models import Conversation
+from app.controllers import deps
+from app.controllers.deps import ChatDependencies, HealthDependencies, SourceDependencies
+from app.controllers.errors import install_error_handlers
+from app.controllers.health import health_router
+from app.controllers.router import api_router
 from app.services.agent.policy import AgentPolicy
 from app.services.chat_service import AssistantMetadata, ConversationService
 from app.services.health_service import HealthService
 from app.services.ports.health import DependencyHealth
+from app.services.rules.models import Conversation
 from app.services.sources import SourceService
+from app.utils.security import Identity
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 

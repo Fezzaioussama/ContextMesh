@@ -1,8 +1,5 @@
 """Workflow nodes and routing predicates; a graph adapter wires these transitions."""
 
-from app.core.security import Identity
-from app.domain.knowledge import CatalogSource
-from app.domain.models import AgentOutcome, Message
 from app.services.agent.assessor import EvidenceAssessor
 from app.services.agent.budget import BudgetedModel
 from app.services.agent.checker import SupportChecker
@@ -12,6 +9,9 @@ from app.services.agent.policy import AgentPolicy
 from app.services.agent.release import released
 from app.services.agent.state import AgentState, Draft
 from app.services.agent.writer import AnswerWriter
+from app.services.rules.knowledge import CatalogSource
+from app.services.rules.models import AgentOutcome, Message
+from app.utils.security import Identity
 
 
 class AgentSteps:

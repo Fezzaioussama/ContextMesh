@@ -3,10 +3,10 @@
 from uuid import uuid4
 
 import pytest
-from app.bootstrap.api import create_app
-from app.core.security import Identity
-from app.db.models.user import memberships
-from app.domain.errors import provider_unavailable
+from app.data.db.models.user import memberships
+from app.services.rules.errors import provider_unavailable
+from app.setup.api import create_app
+from app.utils.security import Identity
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
 from support import ask, create_source, drain, upload

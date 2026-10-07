@@ -3,8 +3,8 @@
 from hashlib import sha256
 from uuid import UUID
 
-from app.core.security import Identity
-from app.domain.knowledge import (
+from app.services.ports.sources import BlobStore, EvidenceReader, SourceStore
+from app.services.rules.knowledge import (
     DocumentSummary,
     JobView,
     Passage,
@@ -12,9 +12,14 @@ from app.domain.knowledge import (
     SourceDraft,
     UploadReceipt,
 )
-from app.domain.uploads import checked_upload, normalized_description, normalized_source_name
-from app.domain.web import checked_start_url
-from app.services.ports.sources import BlobStore, EvidenceReader, SourceStore
+from app.services.rules.uploads import (
+    checked_upload,
+    normalized_description,
+    normalized_source_name,
+)
+from app.services.rules.web import checked_start_url
+from app.utils.logging import flow_event
+from app.utils.security import Identity
 
 
 class SourceService:
@@ -35,10 +40,14 @@ class SourceService:
         self, identity: Identity, name: str, description: str, url: str | None = None
     ) -> Source:
         """A URL makes a website source that the worker crawls; otherwise files are uploaded."""
-        return self._store.create(identity, _draft(name, description, url))
+        source = self._store.create(identity, _draft(name, description, url))
+        flow_event("add_source", "created", source_id=source.id, kind=source.kind)
+        return source
 
     def sync(self, identity: Identity, source_id: UUID) -> UUID:
-        return self._store.request_sync(identity, source_id)
+        job_id = self._store.request_sync(identity, source_id)
+        flow_event("crawl_website", "requested", source_id=source_id, job_id=job_id)
+        return job_id
 
     def sources(self, identity: Identity) -> tuple[Source, ...]:
         return self._store.sources(identity)
@@ -60,13 +69,24 @@ class SourceService:
             raise
         if receipt.duplicate:
             self._blobs.delete(key)
+        flow_event(
+            "upload_document",
+            "accepted",
+            document_id=receipt.document.id,
+            job_id=receipt.job_id,
+            duplicate=receipt.duplicate,
+        )
         return receipt
 
     def delete_document(self, identity: Identity, document_id: UUID) -> UUID:
-        return self._store.delete_document(identity, document_id)
+        job_id = self._store.delete_document(identity, document_id)
+        flow_event("delete_document", "requested", document_id=document_id, job_id=job_id)
+        return job_id
 
     def delete_source(self, identity: Identity, source_id: UUID) -> UUID:
-        return self._store.delete_source(identity, source_id)
+        job_id = self._store.delete_source(identity, source_id)
+        flow_event("delete_source", "requested", source_id=source_id, job_id=job_id)
+        return job_id
 
     def job(self, identity: Identity, job_id: UUID) -> JobView:
         return self._store.job(identity, job_id)

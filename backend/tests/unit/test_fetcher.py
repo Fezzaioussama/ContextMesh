@@ -7,8 +7,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
-from app.domain.errors import FetchFailure
-from app.web.fetcher import SafeHttpFetcher, UnresolvedHost, is_public_address, system_resolve
+from app.data.web.fetcher import SafeHttpFetcher, UnresolvedHost, is_public_address, system_resolve
+from app.services.rules.errors import FetchFailure
 
 PUBLIC, INTERNAL, CLOSED = "127.0.0.1", "127.0.0.2", "127.0.0.3"
 HOSTS = {

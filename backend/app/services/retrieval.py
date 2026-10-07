@@ -3,10 +3,6 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from app.core.security import Identity
-from app.domain.errors import VectorIndexUnavailable
-from app.domain.knowledge import Evidence, Passage
-from app.domain.ranking import query_terms, reciprocal_rank_fusion, term_coverage
 from app.services.ports.models import EmbeddingModel
 from app.services.ports.retrieval import (
     LexicalSearch,
@@ -15,6 +11,10 @@ from app.services.ports.retrieval import (
     RetrievalResult,
     VectorSearch,
 )
+from app.services.rules.errors import VectorIndexUnavailable
+from app.services.rules.knowledge import Evidence, Passage
+from app.services.rules.ranking import query_terms, reciprocal_rank_fusion, term_coverage
+from app.utils.security import Identity
 
 
 @dataclass(frozen=True)

@@ -5,12 +5,12 @@ import zipfile
 from io import BytesIO
 
 import pytest
-from app.domain.errors import IngestionFailure
-from app.parsers.archive import ArchiveLimits
-from app.parsers.html import HtmlPageReader, HtmlParser
-from app.parsers.office import DocxParser, PptxParser, XlsxParser
-from app.parsers.pdf import PdfParser
 from app.services.ports.web import FetchedPage, PageSummary
+from app.services.rules.errors import IngestionFailure
+from app.utils.parsers.archive import ArchiveLimits
+from app.utils.parsers.html import HtmlPageReader, HtmlParser
+from app.utils.parsers.office import DocxParser, PptxParser, XlsxParser
+from app.utils.parsers.pdf import PdfParser
 from documents import docx, pdf, pptx, xlsx
 
 

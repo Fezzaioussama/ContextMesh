@@ -3,8 +3,8 @@
 from collections.abc import Mapping
 from uuid import UUID
 
-from app.domain.errors import model_output_invalid
-from app.domain.knowledge import CatalogSource
+from app.services.rules.errors import model_output_invalid
+from app.services.rules.knowledge import CatalogSource
 
 
 def text_field(data: Mapping[str, object], name: str, limit: int) -> str:

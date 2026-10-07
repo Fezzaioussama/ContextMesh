@@ -4,9 +4,6 @@ import logging
 from collections.abc import Mapping
 from uuid import UUID
 
-from app.domain.chunking import ChunkingPolicy, chunk_elements
-from app.domain.errors import IngestionFailure, VectorIndexUnavailable
-from app.domain.knowledge import ChunkDraft, ClaimedJob, IndexTarget
 from app.services.ports.ingestion import (
     IndexingStore,
     JobQueue,
@@ -16,6 +13,9 @@ from app.services.ports.ingestion import (
 )
 from app.services.ports.models import EmbeddingModel
 from app.services.ports.sources import BlobStore
+from app.services.rules.chunking import ChunkingPolicy, chunk_elements
+from app.services.rules.errors import IngestionFailure, VectorIndexUnavailable
+from app.services.rules.knowledge import ChunkDraft, ClaimedJob, IndexTarget
 
 PARSER_REVISION = "parser-v2"
 logger = logging.getLogger("context_mesh.worker")

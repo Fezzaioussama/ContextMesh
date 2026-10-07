@@ -5,13 +5,14 @@ from dataclasses import dataclass, field
 from hashlib import sha256
 from urllib.robotparser import RobotFileParser
 
-from app.domain.errors import FetchFailure, IngestionFailure
-from app.domain.knowledge import ClaimedJob, WebsiteTarget
-from app.domain.uploads import UploadSpec
-from app.domain.web import CrawlScope, crawl_scope, page_title
 from app.services.ports.ingestion import JobQueue
 from app.services.ports.sources import BlobStore
 from app.services.ports.web import CrawlStore, FetchedPage, PageReader, PageSummary, WebFetcher
+from app.services.rules.errors import FetchFailure, IngestionFailure
+from app.services.rules.knowledge import ClaimedJob, WebsiteTarget
+from app.services.rules.uploads import UploadSpec
+from app.services.rules.web import CrawlScope, crawl_scope, page_title
+from app.utils.logging import flow_event
 
 USER_AGENT = "ContextMeshBot/0.3"
 GONE = "not_found"
@@ -157,7 +158,10 @@ class SiteCrawler:
         run = self._crawl(job, target)
         if not run.progress.seen:
             raise IngestionFailure("no_pages")
-        self._store.finish(job, target, frozenset(run.progress.seen), run.covered())
+        covered = run.covered()
+        self._store.finish(job, target, frozenset(run.progress.seen), covered)
+        pages = len(run.progress.seen)
+        flow_event("crawl_website", "crawled", job_id=job.id, pages=pages, complete=bool(covered))
 
     def _crawl(self, job: ClaimedJob, target: WebsiteTarget) -> CrawlRun:
         robots = RobotsRules(self._fetcher)
@@ -196,6 +200,7 @@ class SiteCrawler:
             return self._fetcher.fetch(url)
         except FetchFailure as failure:
             progress.skipped(failure)
+            flow_event("crawl_website", "page_skipped", url=url, code=failure.code)
             return None
 
     def _accept(self, run: CrawlRun, page: FetchedPage, depth: int) -> None:
@@ -214,6 +219,7 @@ class SiteCrawler:
         digest = sha256(page.content).hexdigest()
         if not self._store.register_page(run.job, run.target, spec, digest, key):
             self._blobs.delete(key)
+        flow_event("crawl_website", "page_recorded", job_id=run.job.id, url=page.url)
 
 
 def _title(summary: PageSummary, page: FetchedPage) -> str:

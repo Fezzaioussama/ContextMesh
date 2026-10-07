@@ -3,14 +3,14 @@
 from uuid import uuid4
 
 import pytest
-from app.domain.errors import (
+from app.services.ingestion.worker import IngestionWorker
+from app.services.rules.errors import (
     IngestionFailure,
     LeaseLost,
     VectorIndexUnavailable,
     provider_unavailable,
 )
-from app.domain.knowledge import ClaimedJob
-from app.services.ingestion.worker import IngestionWorker
+from app.services.rules.knowledge import ClaimedJob
 
 
 class Queue:

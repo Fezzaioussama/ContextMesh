@@ -4,7 +4,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from app.domain.models import Usage
+from app.services.rules.models import Usage
 
 
 @dataclass(frozen=True)

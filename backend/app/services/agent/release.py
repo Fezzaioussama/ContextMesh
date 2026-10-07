@@ -2,7 +2,10 @@
 
 from uuid import UUID
 
-from app.domain.answers import (
+from app.services.agent.policy import AgentPolicy
+from app.services.agent.state import AgentState, DraftClaim
+from app.services.agent.wording import counted
+from app.services.rules.answers import (
     UNSPECIFIED_GAP,
     Answer,
     Citation,
@@ -11,11 +14,8 @@ from app.domain.answers import (
     rendered_text,
     snippet,
 )
-from app.domain.knowledge import Evidence
-from app.domain.models import AgentOutcome
-from app.services.agent.policy import AgentPolicy
-from app.services.agent.state import AgentState, DraftClaim
-from app.services.agent.wording import counted
+from app.services.rules.knowledge import Evidence
+from app.services.rules.models import AgentOutcome
 
 
 def released(state: AgentState, policy: AgentPolicy) -> AgentOutcome:

@@ -1,7 +1,7 @@
 """Provider selection keeps credentials, destinations, and model IDs together."""
 
 import pytest
-from app.core.config import Settings
+from app.utils.config import Settings
 from pydantic import ValidationError
 
 

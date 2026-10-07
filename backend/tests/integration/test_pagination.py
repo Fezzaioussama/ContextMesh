@@ -5,12 +5,12 @@ import json
 from uuid import uuid4
 
 import pytest
-from app.core.exceptions import ContextMeshError
-from app.db.models.conversation import (
+from app.data.db.models.conversation import (
     conversations,
     messages,
 )
-from app.domain.models import TurnInput
+from app.services.rules.models import TurnInput
+from app.utils.exceptions import ContextMeshError
 from sqlalchemy import update
 from support import fixture_outcome
 

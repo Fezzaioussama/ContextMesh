@@ -4,9 +4,9 @@ from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
-from app.core.security import Identity
-from app.domain.knowledge import CatalogSource, Evidence, Passage
-from app.domain.models import AgentOutcome, Message
+from app.services.rules.knowledge import CatalogSource, Evidence, Passage
+from app.services.rules.models import AgentOutcome, Message
+from app.utils.security import Identity
 
 
 @dataclass(frozen=True)

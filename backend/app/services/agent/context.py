@@ -2,9 +2,9 @@
 
 from uuid import UUID
 
-from app.domain.knowledge import CatalogSource, Evidence
-from app.domain.models import Message
 from app.services.agent.policy import AgentPolicy
+from app.services.rules.knowledge import CatalogSource, Evidence
+from app.services.rules.models import Message
 
 
 def merged_evidence(

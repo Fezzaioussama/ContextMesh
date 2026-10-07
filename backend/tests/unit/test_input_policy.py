@@ -3,9 +3,13 @@
 from uuid import uuid4
 
 import pytest
-from app.core.exceptions import ContextMeshError
-from app.domain.uploads import checked_upload, normalized_description, normalized_source_name
-from app.domain.validation import checked_source_filter
+from app.services.rules.uploads import (
+    checked_upload,
+    normalized_description,
+    normalized_source_name,
+)
+from app.services.rules.validation import checked_source_filter
+from app.utils.exceptions import ContextMeshError
 
 
 @pytest.mark.parametrize(

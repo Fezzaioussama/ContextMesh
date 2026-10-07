@@ -4,9 +4,9 @@ import os
 from uuid import uuid4
 
 import pytest
-from app.domain.errors import VectorIndexUnavailable
-from app.search.qdrant import QdrantVectorIndex
+from app.data.vectors.qdrant import QdrantVectorIndex
 from app.services.ports.ingestion import VectorPoint
+from app.services.rules.errors import VectorIndexUnavailable
 from qdrant_client import QdrantClient
 
 pytestmark = pytest.mark.integration

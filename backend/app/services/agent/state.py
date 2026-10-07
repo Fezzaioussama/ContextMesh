@@ -3,10 +3,10 @@
 from dataclasses import dataclass, field, replace
 from uuid import UUID
 
-from app.core.security import Identity
-from app.domain.answers import TraceStage
-from app.domain.knowledge import CatalogSource, Evidence
-from app.domain.models import Message, Usage
+from app.services.rules.answers import TraceStage
+from app.services.rules.knowledge import CatalogSource, Evidence
+from app.services.rules.models import Message, Usage
+from app.utils.security import Identity
 
 
 @dataclass(frozen=True)

@@ -5,13 +5,13 @@ from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
-from app.core.exceptions import ContextMeshError
-from app.domain.models import Conversation, Page
 from app.services.agent.policy import AgentPolicy
 from app.services.assistant import Assistant
 from app.services.chat_service import ConversationService
 from app.services.ports.conversations import ConversationStore, TurnStore
 from app.services.ports.retrieval import AnswerWorkflow, SourceCatalog
+from app.services.rules.models import Conversation, Page
+from app.utils.exceptions import ContextMeshError
 from support import ScriptedReasoning
 
 

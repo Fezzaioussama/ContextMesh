@@ -6,13 +6,13 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from app.ai.llm import embeddings as embedding_adapter
-from app.ai.llm import openai as reasoning_adapter
-from app.bootstrap import services as service_factory
-from app.bootstrap.api import create_app
-from app.bootstrap.knowledge import ingestion_worker
-from app.bootstrap.services import create_services
-from app.core.config import Settings
+from app.data.llm import embeddings as embedding_adapter
+from app.data.llm import openai as reasoning_adapter
+from app.setup import services as service_factory
+from app.setup.api import create_app
+from app.setup.knowledge import ingestion_worker
+from app.setup.services import create_services
+from app.utils.config import Settings
 from fastapi.testclient import TestClient
 from openai import OpenAI
 from qdrant_client import QdrantClient

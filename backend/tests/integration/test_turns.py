@@ -5,12 +5,12 @@ from datetime import UTC, datetime, timedelta
 from threading import Event
 
 import pytest
-from app.core.exceptions import ContextMeshError
-from app.db.models.conversation import turns
-from app.db.models.user import memberships
-from app.db.repositories.retrieval_repository import RetrievalRepository
-from app.domain.models import TurnInput
+from app.data.db.models.conversation import turns
+from app.data.db.models.user import memberships
+from app.data.db.repositories.retrieval_repository import RetrievalRepository
 from app.services.assistant import Assistant
+from app.services.rules.models import TurnInput
+from app.utils.exceptions import ContextMeshError
 from sqlalchemy import delete, update
 from support import FixtureWorkflow, ScriptedReasoning, fixture_outcome
 

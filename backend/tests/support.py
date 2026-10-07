@@ -7,13 +7,13 @@ import re
 from collections.abc import Callable
 from uuid import uuid4
 
-from app.bootstrap.services import ExternalServices, collection_name
-from app.domain.answers import Answer, TraceStage
-from app.domain.errors import FetchFailure
-from app.domain.models import AgentOutcome, Usage
-from app.search.qdrant import QdrantVectorIndex
+from app.data.vectors.qdrant import QdrantVectorIndex
 from app.services.ports.models import StructuredReply, StructuredTask
 from app.services.ports.web import FetchedPage
+from app.services.rules.answers import Answer, TraceStage
+from app.services.rules.errors import FetchFailure
+from app.services.rules.models import AgentOutcome, Usage
+from app.setup.services import ExternalServices, collection_name
 from qdrant_client import QdrantClient
 
 ROOT = "/api/v1/assistant"

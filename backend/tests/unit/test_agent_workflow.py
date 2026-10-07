@@ -3,20 +3,20 @@
 from uuid import uuid4
 
 import pytest
-from app.ai.orchestration.graph import LangGraphWorkflow
-from app.core.exceptions import ContextMeshError
-from app.core.security import Identity
-from app.domain.answers import UNSPECIFIED_GAP, Locator
-from app.domain.knowledge import CatalogSource, Evidence, Passage
 from app.services.agent.assessor import EvidenceAssessor
 from app.services.agent.budget import BudgetedModel
 from app.services.agent.checker import SupportChecker
 from app.services.agent.gather import EvidenceGatherer
+from app.services.agent.graph import LangGraphWorkflow
 from app.services.agent.planner import SearchPlanner
 from app.services.agent.policy import AgentPolicy
 from app.services.agent.steps import AgentSteps
 from app.services.agent.writer import AnswerWriter
 from app.services.ports.retrieval import RetrievalResult
+from app.services.rules.answers import UNSPECIFIED_GAP, Locator
+from app.services.rules.knowledge import CatalogSource, Evidence, Passage
+from app.utils.exceptions import ContextMeshError
+from app.utils.security import Identity
 from support import ScriptedReasoning
 
 IDENTITY = Identity("agent-test", uuid4())

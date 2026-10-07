@@ -10,36 +10,42 @@ backend/
   app/
     main.py                     # Uvicorn factory (API)
     worker.py                   # `python -m app.worker` (ingestion worker)
-    domain/                     # Pure values and policy: answers, knowledge,
-                                #   chunking, ranking (RRF), uploads, validation
-    services/                   # Use cases; owns every port
-      ports/                    # conversations, sources, ingestion, retrieval, models
-      assistant.py              # Authorize scope, claim turn, run agent, release
-      sources.py                # Sources, uploads, deletion, evidence
-      retrieval.py              # Hybrid retrieval + deterministic reranker
-      ingestion/                # Worker loop, indexer, site crawler, erasers
-      agent/                    # Policy, state, planner, gatherer, assessor,
-                                #   writer, checker, release, steps
-    ai/
-      llm/                      # OpenAI-compatible Responses + Embeddings adapters
-      orchestration/graph.py    # LangGraph adapter over agent steps
-    db/                         # SQLAlchemy tables and repositories
-    search/qdrant.py            # Vector index adapter
-    parsers/                    # Markdown/text, HTML, PDF, Word, PowerPoint, Excel
-    web/fetcher.py              # Guarded HTTP fetcher (public destinations only)
-    storage/filesystem.py       # Blob store with opaque keys
-    api/ schemas/               # HTTP transport and published shapes
-    bootstrap/                  # Composition roots for API and worker
+    controllers/                # HTTP: routes (chat, sources, health), error mapping
+      schemas/                  #   request/response shapes published to the frontend
+    services/                   # What the app does, one area per user story
+      sources.py                #   add sources, upload, delete, show evidence
+      assistant.py              #   ask a question: claim turn, run agent, save answer
+      retrieval.py              #   hybrid search + deterministic reranker
+      agent/                    #   plan, gather, assess, write, check, release; graph.py
+      ingestion/                #   worker loop, indexer, website crawler, erasers
+      ports/                    #   interfaces the services need (stores, models, web)
+      rules/                    #   pure business rules: chunking, ranking, citations,
+                                #     uploads, URLs, validation (no frameworks or I/O)
+    data/                       # Everything that stores or fetches data
+      db/                       #   SQLAlchemy tables and repositories (PostgreSQL)
+      vectors/                  #   Qdrant vector index
+      blobs/                    #   uploaded/crawled file storage
+      llm/                      #   OpenAI-compatible model and embedding clients
+      web/                      #   guarded HTTP fetcher (public destinations only)
+    utils/                      # config, errors, security, logging (flow events)
+      parsers/                  #   Markdown/text, HTML, PDF, Word, PowerPoint, Excel
+    setup/                      # Wiring: picks concrete data classes for API and worker
   migrations/versions/          # 0001 assistant … 0004 formats and websites
   scripts/start_{api,worker}.sh
   tests/{unit,integration,e2e}/
 ```
 
-Dependencies point inward: `domain` uses only the standard library and the
-shared `core` kernel; `services` depend on `domain` and their own ports; adapters
-(`ai`, `db`, `search`, `parsers`, `storage`, `api`) implement those ports;
-`bootstrap` is the only place concrete adapters are chosen. Tests inject
-replacements through `create_app(settings, services, identity)`.
+A request flows **controllers → services → data**. Controllers only translate
+HTTP; services hold the use cases and depend on `services/ports` interfaces, which
+the `data` classes implement; `services/rules` stays free of frameworks and I/O so
+it is easy to read and test; `utils` is shared by everyone; `setup` is the only
+place that chooses concrete classes. Tests inject replacements through
+`create_app(settings, services, identity)`.
+
+To follow a user story through the code or the logs, read
+[docs/flows.md](../docs/flows.md). Both processes log one line per step, e.g.
+`flow=crawl_website step=page_recorded job_id=… url=…`; filter with
+`docker compose logs api worker | grep "flow=upload_document"`.
 
 ## Ingestion
 
@@ -57,13 +63,18 @@ the worker removes vectors and blobs afterwards.
 ## Websites
 
 A website source stores a start URL. `POST /api/v1/sources/{id}/sync` enqueues one
-crawl job (repeated requests return the open job). The crawler fetches pages
-breadth-first within the start URL's directory, honours `robots.txt`, and records
-each fetched page as a document version keyed by its canonical URL, so unchanged
-pages are idempotent. Pages missing from a crawl are retired only when the crawl
-finished without hitting its limits or a transient failure. `app/web/fetcher.py`
-resolves every host itself, rejects non-public addresses and non-web ports for
-each connection and redirect, and caps time and size.
+crawl job (repeated requests return the open job). The crawler reads `robots.txt`
+(RFC 9309: missing allows, unreachable fails and retries), fetches the start page
+first and takes the scope from its final address (so http→https or an added `/`
+work), then crawls breadth-first within that directory, recording each page as a
+document version keyed by its canonical ASCII URL; unchanged pages are idempotent.
+Pages are retired only after a complete crawl of more than one page, and only
+within the URL prefix that crawl covered; any failure other than 404/410, an empty
+page, or a redirect out of scope makes the crawl partial (`crawled_partial`) and
+retires nothing. `app/data/web/fetcher.py` resolves every host itself, rejects
+non-public addresses (including NAT64 and IPv4-mapped forms) and non-web ports for
+each connection and redirect, caps size, and gives each fetch one wall-clock
+deadline (twice `CONTEXTMESH_WEB_TIMEOUT_SECONDS`, redirects included).
 
 ## Querying
 

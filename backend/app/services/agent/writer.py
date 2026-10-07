@@ -3,7 +3,6 @@
 from collections.abc import Mapping
 from dataclasses import replace
 
-from app.domain.knowledge import Evidence
 from app.services.agent.budget import BudgetedModel
 from app.services.agent.context import labeled, passages_payload, selected_context
 from app.services.agent.instructions import ANSWER, ANSWER_SCHEMA
@@ -11,6 +10,7 @@ from app.services.agent.output import objects, string_list, text_field
 from app.services.agent.policy import AgentPolicy
 from app.services.agent.state import AgentState, Draft, DraftClaim
 from app.services.agent.wording import counted
+from app.services.rules.knowledge import Evidence
 
 STATUSES = frozenset({"answered", "partial", "insufficient_evidence"})
 

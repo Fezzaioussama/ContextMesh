@@ -3,10 +3,10 @@
 from uuid import uuid4
 
 import pytest
-from app.domain.answers import Locator
-from app.domain.knowledge import Passage
-from app.domain.ranking import query_terms, reciprocal_rank_fusion
 from app.services.retrieval import TermOverlapReranker
+from app.services.rules.answers import Locator
+from app.services.rules.knowledge import Passage
+from app.services.rules.ranking import query_terms, reciprocal_rank_fusion
 
 
 def test_rrf_uses_one_based_ranks_and_missing_ranks_add_nothing():

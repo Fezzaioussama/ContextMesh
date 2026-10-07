@@ -1,7 +1,7 @@
 """Dependency failures keep process liveness and return safe HTTP errors."""
 
-from app.bootstrap.api import create_app
-from app.core.config import Settings
+from app.setup.api import create_app
+from app.utils.config import Settings
 from fastapi.testclient import TestClient
 
 

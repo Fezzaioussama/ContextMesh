@@ -3,9 +3,9 @@
 from unittest.mock import Mock
 
 import pytest
-from app.bootstrap import api, runtime
-from app.bootstrap.services import ExternalServices
-from app.core.config import Settings
+from app.setup import api, runtime
+from app.setup.services import ExternalServices
+from app.utils.config import Settings
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 from sqlalchemy.exc import SQLAlchemyError

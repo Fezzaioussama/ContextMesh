@@ -7,11 +7,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import httpx
 import pytest
-from app.ai.llm.embeddings import OpenAIEmbeddingModel
-from app.ai.llm.openai import OpenAIReasoningModel
-from app.core.exceptions import ContextMeshError
-from app.domain.models import Usage
+from app.data.llm.embeddings import OpenAIEmbeddingModel
+from app.data.llm.openai import OpenAIReasoningModel
 from app.services.ports.models import StructuredTask
+from app.services.rules.models import Usage
+from app.utils.exceptions import ContextMeshError
 from openai import OpenAI
 
 SCHEMA = {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"]}

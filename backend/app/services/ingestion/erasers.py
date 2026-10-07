@@ -1,8 +1,8 @@
 """Physical cleanup after canonical tombstones have already removed visibility."""
 
-from app.domain.knowledge import ClaimedJob
 from app.services.ports.ingestion import IndexingStore, JobQueue, VectorWriter
 from app.services.ports.sources import BlobStore
+from app.services.rules.knowledge import ClaimedJob
 
 
 class _Eraser:
