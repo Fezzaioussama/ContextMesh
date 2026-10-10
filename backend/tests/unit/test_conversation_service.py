@@ -5,13 +5,13 @@ from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
-from app.services.agent.policy import AgentPolicy
-from app.services.assistant import Assistant
-from app.services.chat_service import ConversationService
-from app.services.ports.conversations import ConversationStore, TurnStore
-from app.services.ports.retrieval import AnswerWorkflow, SourceCatalog
-from app.services.rules.models import Conversation, Page
-from app.utils.exceptions import ContextMeshError
+from app.data.chat import ChatRepository
+from app.data.retrieval import RetrievalRepository
+from app.services.agent.graph import AgentWorkflow
+from app.services.agent.state import AgentPolicy
+from app.services.chat import ConversationService
+from app.services.models import Conversation, Page
+from app.utils.errors import ContextMeshError
 from support import ScriptedReasoning
 
 
@@ -22,13 +22,12 @@ def model():
 
 @pytest.fixture
 def service_and_store(model):
-    store = Mock(spec=ConversationStore)
-    assistant = Assistant(
-        Mock(spec=TurnStore), Mock(spec=SourceCatalog), Mock(spec=AnswerWorkflow), model
-    )
+    store = Mock(spec=ChatRepository)
     service = ConversationService(
         store,
-        assistant,
+        Mock(spec=RetrievalRepository),
+        Mock(spec=AgentWorkflow),
+        model,
         provider="openrouter",
         model_name="fixture",
         embedding_model="vendor/embed",

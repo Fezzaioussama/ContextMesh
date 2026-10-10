@@ -4,14 +4,13 @@ import json
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from unittest.mock import MagicMock, Mock
 
 import httpx
 import pytest
-from app.data.llm.embeddings import OpenAIEmbeddingModel
-from app.data.llm.openai import OpenAIReasoningModel
-from app.services.ports.models import StructuredTask
-from app.services.rules.models import Usage
-from app.utils.exceptions import ContextMeshError
+from app.data.llm import OpenAIEmbeddingModel, OpenAIReasoningModel
+from app.services.models import StructuredTask, Usage
+from app.utils.errors import ContextMeshError
 from openai import OpenAI
 
 SCHEMA = {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"]}
@@ -285,15 +284,19 @@ def test_total_call_time_is_bounded_even_when_bytes_keep_arriving():
     assert (error.value.code, elapsed < 1.5) == ("provider_unavailable", True)
 
 
-def test_a_stream_closed_by_the_wall_clock_limit_is_a_provider_failure(monkeypatch):
+def test_a_stream_closed_by_the_wall_clock_limit_is_a_provider_failure():
+    raw = Mock()
+    raw.parse.side_effect = httpx.StreamClosed()
+    client = MagicMock()
+    client.responses.with_streaming_response.create.return_value.__enter__.return_value = raw
     model = OpenAIReasoningModel(
-        api_key="k", model="m", base_url="http://unused/v1", timeout=1, max_output_tokens=10
+        api_key="k",
+        model="m",
+        base_url="http://unused/v1",
+        timeout=1,
+        max_output_tokens=10,
+        client=client,
     )
-
-    def closed_before_reading(task):
-        raise httpx.StreamClosed()
-
-    monkeypatch.setattr(model, "_request", closed_before_reading)
     with pytest.raises(ContextMeshError) as error:
         model.complete(StructuredTask("probe", "Return JSON.", "{}", SCHEMA, 1))
     model.close()

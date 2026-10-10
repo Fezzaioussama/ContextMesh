@@ -3,30 +3,20 @@
 from uuid import uuid4
 
 import pytest
-from app.data.tracing.models import TracedEmbeddingModel, TracedReasoningModel
-from app.data.tracing.retrieval import TracedEvidenceSearch
-from app.data.tracing.scope import DisabledTracing, LangSmithTracing
-from app.services.agent.assessor import EvidenceAssessor
-from app.services.agent.budget import BudgetedModel
-from app.services.agent.checker import SupportChecker
-from app.services.agent.direct import DirectAnswerer
-from app.services.agent.gather import EvidenceGatherer
-from app.services.agent.graph import LangGraphWorkflow
-from app.services.agent.planner import SearchPlanner
-from app.services.agent.policy import AgentPolicy
-from app.services.agent.router import DecisionRouter
-from app.services.agent.steps import AgentSteps
-from app.services.agent.writer import AnswerWriter
-from app.services.ports.retrieval import RetrievalResult
-from app.services.rules.answers import Locator
-from app.services.rules.errors import provider_unavailable
-from app.services.rules.knowledge import CatalogSource, Evidence, Passage
-from app.setup.services import ExternalServices
-from app.setup.tracing import create_tracing, traced_search, traced_services
+from app.data.tracing import (
+    DisabledTracing,
+    LangSmithTracing,
+    TracedEmbeddingModel,
+    TracedReasoningModel,
+    TracedSearch,
+)
+from app.services.agent.graph import AgentWorkflow
+from app.services.agent.steps import Agent
+from app.services.models import CatalogSource, Evidence, Identity, Locator, Passage, RetrievalResult
 from app.utils.config import Settings
-from app.utils.exceptions import ContextMeshError
+from app.utils.errors import ContextMeshError
 from app.utils.logging import flow_scope
-from app.utils.security import Identity
+from app.wiring import ExternalServices, create_tracing, traced_search, traced_services
 from langsmith import Client
 from langsmith.run_helpers import get_current_run_tree
 from pydantic import ValidationError
@@ -101,22 +91,9 @@ def no_environment_tracing(monkeypatch):
 
 
 def workflow(reasoning, tracing=None):
-    policy = AgentPolicy()
-    model = BudgetedModel(
-        TracedReasoningModel(reasoning, provider="openai", model="gpt-test"), policy, lambda: 0.0
-    )
-    steps = AgentSteps(
-        model,
-        DecisionRouter(None, model, policy),
-        DirectAnswerer(model, policy),
-        SearchPlanner(model, policy),
-        EvidenceGatherer(TracedEvidenceSearch(OneSourceSearch()), model, policy),
-        EvidenceAssessor(model, policy),
-        AnswerWriter(model, policy),
-        SupportChecker(model),
-        policy,
-    )
-    return LangGraphWorkflow(steps, tracing)
+    model = TracedReasoningModel(reasoning, provider="openai", model="gpt-test")
+    agent = Agent(model, TracedSearch(OneSourceSearch()), clock=lambda: 0.0)
+    return AgentWorkflow(agent, tracing)
 
 
 def traced_turn(client, reasoning=None, turn_id="turn-1"):
@@ -173,10 +150,10 @@ def test_retrieval_reports_the_hydrated_passages_as_documents():
 
 def test_a_failed_model_call_is_traced_and_raises_the_same_error():
     client, reasoning = RecordingClient(), ScriptedReasoning()
-    reasoning.failure = provider_unavailable()
+    reasoning.failure = ContextMeshError("provider_unavailable")
     with pytest.raises(ContextMeshError) as raised:
         traced_turn(client, reasoning)
-    assert raised.value.code == provider_unavailable().code
+    assert raised.value.code == "provider_unavailable"
     (plan_call,) = client.named("search_plan")
     assert plan_call["error"]
 
@@ -277,6 +254,6 @@ def test_tracing_on_wraps_the_agent_ports_and_flushes_on_close(monkeypatch):
         LangSmithTracing,
         TracedReasoningModel,
         TracedEmbeddingModel,
-        TracedEvidenceSearch,
+        TracedSearch,
         [True],
     )

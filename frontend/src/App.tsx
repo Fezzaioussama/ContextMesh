@@ -1,34 +1,23 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { AgentMetadata, Conversation, Source } from "./api/contracts";
-import { ErrorNotice } from "./components/Feedback";
-import { Icon } from "./components/Icon";
 import { Sidebar } from "./components/Sidebar";
-import { useDrawerAccessibility } from "./components/useDrawerAccessibility";
-import { AGENT_NAME } from "./features/chat/agentName";
+import { ErrorNotice, Icon } from "./components/ui";
 import { AgentStatus, SetupBanner } from "./features/chat/AgentStatus";
-import { ChatPanel } from "./features/chat/ChatPanel";
-import { readSelection, saveSelection } from "./features/chat/browserState";
-import { effectiveScope } from "./features/chat/ScopePicker";
-import type { SearchScope } from "./features/chat/ScopePicker";
-import { useConversations } from "./features/chat/useConversations";
-import { useCreateConversation } from "./features/chat/useCreateConversation";
-import { useMetadata } from "./features/chat/useMetadata";
-import { Welcome } from "./features/chat/Welcome";
+import { ChatPanel, effectiveScope, Welcome } from "./features/chat/ChatPanel";
+import type { SearchScope } from "./features/chat/ChatPanel";
+import {
+  AGENT_NAME,
+  readSelection,
+  saveSelection,
+  useConversations,
+  useCreateConversation,
+  useMetadata,
+} from "./features/chat/hooks";
+import { useSources } from "./features/sources/hooks";
+import type { SourcesState } from "./features/sources/hooks";
 import { SourcesPanel } from "./features/sources/SourcesPanel";
-import { useSources } from "./features/sources/useSources";
-import type { SourcesState } from "./features/sources/useSources";
 
 const DEFAULT_UPLOAD_LIMIT = 20_000_000;
-
-function uploadLimit(agent: AgentMetadata | null): number {
-  if (agent === null) return DEFAULT_UPLOAD_LIMIT;
-  return agent.limits.max_upload_bytes;
-}
-
-function acceptedTypes(agent: AgentMetadata | null): string {
-  if (agent === null) return "";
-  return agent.supported_media_types.join(",");
-}
 
 export function App() {
   const metadata = useMetadata();
@@ -126,8 +115,8 @@ export function App() {
         open={sourcesOpen}
         close={closeSources}
         sources={sources}
-        maxUploadBytes={uploadLimit(metadata.agent)}
-        accept={acceptedTypes(metadata.agent)}
+        maxUploadBytes={metadata.agent?.limits.max_upload_bytes ?? DEFAULT_UPLOAD_LIMIT}
+        accept={metadata.agent?.supported_media_types.join(",") ?? ""}
       />
     </div>
   );
@@ -203,4 +192,69 @@ function Backdrop(props: { open: boolean; close: () => void; label: string }) {
       tabIndex={-1}
     />
   );
+}
+
+// Drawers (conversations, sources): focus moves in, Tab stays inside, Escape closes.
+
+function focusableElements(sidebar: HTMLElement): HTMLElement[] {
+  return [
+    ...sidebar.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), input:not(:disabled), summary, a[href], [tabindex="0"]',
+    ),
+  ];
+}
+
+function focusStart(sidebar: HTMLElement) {
+  const elements = focusableElements(sidebar);
+  if (elements.length > 0) elements[0].focus();
+}
+
+function tabDestination(backward: boolean, elements: HTMLElement[]) {
+  const first = elements[0];
+  const last = elements[elements.length - 1];
+  if (backward) return { boundary: first, next: last };
+  return { boundary: last, next: first };
+}
+
+function trapTab(event: KeyboardEvent, sidebar: HTMLElement) {
+  const elements = focusableElements(sidebar);
+  if (elements.length === 0) return;
+  const target = tabDestination(event.shiftKey, elements);
+  if (document.activeElement === target.boundary) {
+    event.preventDefault();
+    target.next.focus();
+  }
+}
+
+function handleKey(
+  event: KeyboardEvent,
+  sidebar: HTMLElement,
+  close: () => void,
+) {
+  if (event.key === "Escape") {
+    close();
+    return;
+  }
+  if (event.key === "Tab") trapTab(event, sidebar);
+}
+
+export function useDrawerAccessibility(
+  open: boolean,
+  close: () => void,
+  drawerId: string,
+) {
+  useEffect(() => {
+    if (!open) return;
+    const sidebar = document.getElementById(drawerId);
+    if (sidebar === null) return;
+    const previous = document.activeElement;
+    focusStart(sidebar);
+    const onKeyDown = (event: KeyboardEvent) =>
+      handleKey(event, sidebar, close);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      if (previous instanceof HTMLElement) previous.focus();
+    };
+  }, [open, close, drawerId]);
 }

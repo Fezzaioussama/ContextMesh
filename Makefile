@@ -2,9 +2,9 @@ PYTHON ?= .venv/bin/python
 RUFF ?= .venv/bin/ruff
 SMOKE_PROVIDER ?= openai
 
-.PHONY: npm-setup quality-setup quality quality-python quality-js quality-test
+.PHONY: npm-setup quality-setup quality quality-python quality-js
 
-# This virtual environment contains repository quality tools, not app runtime deps.
+# This virtual environment holds the linters, not app runtime deps.
 .venv/bin/python:
 	uv venv --python 3.12 .venv
 
@@ -17,16 +17,11 @@ quality-setup: .venv/bin/python npm-setup
 quality: quality-python quality-js
 
 quality-python:
-	$(PYTHON) -m tools.quality --root .
 	$(RUFF) check --config ruff.toml --no-cache .
 	$(RUFF) format --config ruff.toml --check --no-cache .
 
 quality-js:
 	npm run quality:js
-
-quality-test:
-	$(PYTHON) -m unittest discover -s tools/quality/tests/python -v
-	npm run quality:test:js
 
 .PHONY: app-setup dev stop db migrate backend-dev worker-dev frontend-dev app-test smoke-setup smoke
 

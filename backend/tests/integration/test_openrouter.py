@@ -6,13 +6,11 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from app.data.llm import embeddings as embedding_adapter
-from app.data.llm import openai as reasoning_adapter
-from app.setup import services as service_factory
-from app.setup.api import create_app
-from app.setup.knowledge import ingestion_worker
-from app.setup.services import create_services
+from app import wiring
+from app.data import llm
+from app.main import create_app
 from app.utils.config import Settings
+from app.wiring import build_worker, create_services
 from fastapi.testclient import TestClient
 from openai import OpenAI
 from qdrant_client import QdrantClient
@@ -76,9 +74,8 @@ def transport(monkeypatch):
     def sdk_client(**kwargs):
         return OpenAI(http_client=httpx.Client(transport=httpx.MockTransport(recorder)), **kwargs)
 
-    monkeypatch.setattr(reasoning_adapter, "OpenAI", sdk_client)
-    monkeypatch.setattr(embedding_adapter, "OpenAI", sdk_client)
-    monkeypatch.setattr(service_factory, "QdrantClient", lambda **_: QdrantClient(":memory:"))
+    monkeypatch.setattr(llm, "OpenAI", sdk_client)
+    monkeypatch.setattr(wiring, "QdrantClient", lambda **_: QdrantClient(":memory:"))
     return recorder
 
 
@@ -104,7 +101,7 @@ def test_openrouter_indexes_and_answers_with_selected_settings(
         with TestClient(create_app(settings, services, identity)) as client:
             metadata = client.get("/api/v1/assistant")
             upload(client, create_source(client), "auth.md", "# Auth\n\nWe use OIDC.")
-            drain(ingestion_worker(engine, settings, services))
+            drain(build_worker(engine, settings, services))
             conversation = client.post("/api/v1/assistant/conversations", json={}).json()["id"]
             answer = ask(client, conversation, "Which protocol?").json()
     assert (metadata.json()["provider"], metadata.json()["embedding_model"]) == (

@@ -5,12 +5,9 @@ import json
 from uuid import uuid4
 
 import pytest
-from app.data.db.models.conversation import (
-    conversations,
-    messages,
-)
-from app.services.rules.models import TurnInput
-from app.utils.exceptions import ContextMeshError
+from app.data.db import conversations, messages
+from app.services.models import TurnInput
+from app.utils.errors import ContextMeshError
 from sqlalchemy import update
 from support import fixture_outcome
 
@@ -32,12 +29,10 @@ def test_conversation_pages_have_stable_uuid_tiebreaker(repository, identity, en
     assert next_page.next_cursor is None
 
 
-def test_message_pages_advance_in_ascending_stable_order(
-    repository, identity, engine, turn_repository
-):
+def test_message_pages_advance_in_ascending_stable_order(repository, identity, engine):
     conversation = repository.create(identity, "Page history")
-    execution = turn_repository.claim(identity, conversation.id, "key", TurnInput("Question"))
-    result = turn_repository.complete(identity, execution, fixture_outcome("Answer"))
+    execution = repository.claim(identity, conversation.id, "key", TurnInput("Question"))
+    result = repository.complete(identity, execution, fixture_outcome("Answer"))
     with engine.begin() as connection:
         connection.execute(
             update(messages)

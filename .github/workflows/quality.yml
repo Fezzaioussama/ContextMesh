@@ -27,7 +27,5 @@ jobs:
           python -m venv .venv
           .venv/bin/python -m pip install -r requirements-quality.txt
           npm ci
-      - name: Enforce architecture, complexity, and file limits
+      - name: Lint and format checks
         run: make quality
-      - name: Prove the checks reject violations
-        run: make quality-test

@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../App";
 import type { Answer, Job, Source } from "../api/contracts";
-import { webUrl } from "../components/ExternalLink";
+import { webUrl } from "../components/ui";
 import {
   createHttp,
   groundedAnswer,

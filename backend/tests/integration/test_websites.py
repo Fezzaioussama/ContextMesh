@@ -1,8 +1,8 @@
 """Website sources: registration, bounded crawl, cited page URLs, and safe retirement."""
 
 import pytest
-from app.services.ports.web import FetchedPage
-from app.services.rules.errors import FetchFailure
+from app.services.models import FetchedPage
+from app.utils.errors import FetchFailure
 from support import ask, documents, drain
 
 pytestmark = pytest.mark.integration

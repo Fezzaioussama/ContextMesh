@@ -1,6 +1,5 @@
 import type { Conversation } from "../api/contracts";
-import { ErrorNotice, Loading } from "./Feedback";
-import { Icon } from "./Icon";
+import { ErrorNotice, Icon, Loading } from "./ui";
 
 interface SidebarProps {
   items: Conversation[];

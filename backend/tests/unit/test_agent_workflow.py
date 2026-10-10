@@ -5,26 +5,22 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from app.services.agent.assessor import EvidenceAssessor
-from app.services.agent.budget import BudgetedModel
-from app.services.agent.checker import SupportChecker
-from app.services.agent.direct import DirectAnswerer
-from app.services.agent.gather import EvidenceGatherer
-from app.services.agent.graph import RECURSION_LIMIT, LangGraphWorkflow, build_graph
-from app.services.agent.planner import SearchPlanner
-from app.services.agent.policy import AgentPolicy
-from app.services.agent.router import DecisionRouter
-from app.services.agent.steps import AgentSteps
-from app.services.agent.writer import AnswerWriter
-from app.services.ports.decisions import ChoiceReply
-from app.services.ports.retrieval import RetrievalResult
-from app.services.rules.answers import UNSPECIFIED_GAP, Locator
-from app.services.rules.errors import provider_unavailable
-from app.services.rules.knowledge import CatalogSource, Evidence, Passage
-from app.services.rules.models import Message, Usage
-from app.utils.exceptions import ContextMeshError
+from app.services.agent.graph import RECURSION_LIMIT, AgentWorkflow, build_graph
+from app.services.agent.state import AgentPolicy
+from app.services.agent.steps import UNSPECIFIED_GAP, Agent
+from app.services.models import (
+    CatalogSource,
+    ChoiceReply,
+    Evidence,
+    Identity,
+    Locator,
+    Message,
+    Passage,
+    RetrievalResult,
+    Usage,
+)
+from app.utils.errors import ContextMeshError
 from app.utils.logging import flow_logger
-from app.utils.security import Identity
 from langgraph.errors import GraphRecursionError
 from support import ScriptedReasoning
 
@@ -102,20 +98,8 @@ def run(
     decisions=None,
     question="When does the OIDC rollout start?",
 ):
-    clock = clock or Clock()
-    model = BudgetedModel(reasoning, policy, clock)
-    steps = AgentSteps(
-        model,
-        DecisionRouter(decisions, model, policy),
-        DirectAnswerer(model, policy),
-        SearchPlanner(model, policy),
-        EvidenceGatherer(retriever, model, policy),
-        EvidenceAssessor(model, policy),
-        AnswerWriter(model, policy),
-        SupportChecker(model),
-        policy,
-    )
-    return LangGraphWorkflow(steps).run(IDENTITY, question, history, catalog)
+    agent = Agent(reasoning, retriever, decisions, policy, clock or Clock())
+    return AgentWorkflow(agent).run(IDENTITY, question, history, catalog)
 
 
 def plan_only(source_id):
@@ -496,7 +480,7 @@ def test_classifier_failure_falls_back_to_retrieval():
     retriever = SourceRetriever({only.id: [passage(only.id, "Grounded fact.")]})
     reasoning = ScriptedReasoning()
     decisions = ScriptedDecision()
-    decisions.failure = provider_unavailable()
+    decisions.failure = ContextMeshError("provider_unavailable")
     outcome = run(reasoning, retriever, (only,), decisions=decisions)
     assert (len(decisions.tasks), len(retriever.calls), outcome.answer.status) == (1, 1, "answered")
 
@@ -572,7 +556,7 @@ def test_answer_generation_sees_passages_but_not_conversation_history():
 
 
 class EndlessSearch:
-    """Steps that always ask for another search, to exercise the graph-level bound."""
+    """An agent that always asks for another search, to exercise the graph-level bound."""
 
     def __init__(self):
         self.executed = 0
@@ -589,7 +573,7 @@ class EndlessSearch:
 
 
 def test_the_whole_run_is_bounded_across_subgraphs():
-    steps = EndlessSearch()
+    agent = EndlessSearch()
     with pytest.raises(GraphRecursionError):
-        build_graph(steps).invoke({"state": object()})
-    assert steps.executed == RECURSION_LIMIT - 1
+        build_graph(agent).invoke({"state": object()})
+    assert agent.executed == RECURSION_LIMIT - 1

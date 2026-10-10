@@ -1,9 +1,9 @@
 """Input and provider budgets are enforced independently of adapters."""
 
 import pytest
-from app.services.rules.validation import checked_key, normalized_message
+from app.services.validation import checked_key, normalized_message
 from app.utils.config import Settings
-from app.utils.exceptions import ContextMeshError
+from app.utils.errors import ContextMeshError
 from pydantic import ValidationError
 
 

@@ -1,1 +1,1 @@
-"""Shared helpers: configuration, errors, security, logging, and document parsers."""
+"""Shared helpers: configuration, errors, logging, and document parsers."""

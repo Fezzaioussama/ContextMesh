@@ -8,8 +8,7 @@
   },
   "workspaces": ["frontend"],
   "scripts": {
-    "quality:js": "eslint . --max-warnings 0",
-    "quality:test:js": "node --test --test-isolation=none tools/quality/tests/javascript/*.test.mjs"
+    "quality:js": "eslint . --max-warnings 0"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

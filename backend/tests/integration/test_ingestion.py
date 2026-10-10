@@ -6,14 +6,12 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
-from app.data.db.models.knowledge import documents, index_generations, jobs, sources
-from app.data.db.repositories.indexing_repository import IndexingRepository
-from app.data.db.repositories.job_repository import JobRepository
-from app.data.db.repositories.retrieval_repository import RetrievalRepository
-from app.services.rules.answers import Locator
-from app.services.rules.errors import LeaseLost, provider_unavailable
-from app.services.rules.knowledge import ChunkDraft
-from app.utils.exceptions import ContextMeshError
+from app.data.db import documents, index_generations, jobs, sources
+from app.data.indexing import IndexingRepository
+from app.data.jobs import JobRepository
+from app.data.retrieval import RetrievalRepository
+from app.services.models import ChunkDraft, Locator
+from app.utils.errors import ContextMeshError, LeaseLost
 from sqlalchemy import select, update
 from support import create_source, drain, upload
 from support import documents as listed_documents
@@ -88,7 +86,7 @@ def test_new_version_replaces_the_published_generation(client, worker, engine):
 def test_failed_first_index_stays_unavailable_then_recovers(client, worker, engine, embeddings):
     source_id = create_source(client)
     receipt = upload(client, source_id, "policy.md", V1).json()
-    embeddings.failure = provider_unavailable()
+    embeddings.failure = ContextMeshError("provider_unavailable")
     drain(worker)
     row = job_row(engine, receipt["job_id"])
     embeddings.failure = None
@@ -110,7 +108,7 @@ def test_failed_reindex_preserves_the_previous_publication(client, worker, engin
     upload(client, source_id, "policy.md", V1)
     drain(worker)
     upload(client, source_id, "policy.md", V2)
-    embeddings.failure = provider_unavailable()
+    embeddings.failure = ContextMeshError("provider_unavailable")
     drain(worker)
     embeddings.failure = None
     assert passages(client, source_id, "tokens expire") == [

@@ -9,10 +9,9 @@ from unittest.mock import Mock
 
 import httpx
 import pytest
-from app.data.llm.decisions import OpenRouterDecisionModel
-from app.services.ports.decisions import ChoiceTask
-from app.services.rules.models import Usage
-from app.utils.exceptions import ContextMeshError
+from app.data.llm import OpenRouterDecisionModel
+from app.services.models import ChoiceTask, Usage
+from app.utils.errors import ContextMeshError
 
 TASK = ChoiceTask(
     name="knowledge_route",

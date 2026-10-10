@@ -1,7 +1,7 @@
 """Apply versioned PostgreSQL schema with the same server configuration as the API."""
 
 from alembic import context
-from app.setup.schema import metadata
+from app.data.db import metadata
 from app.utils.config import Settings
 from sqlalchemy import create_engine
 

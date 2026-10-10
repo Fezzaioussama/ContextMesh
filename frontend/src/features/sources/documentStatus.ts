@@ -36,15 +36,14 @@ const jobErrors: Record<string, string> = {
 };
 
 export function isOpen(job: Job | null): boolean {
-  const status = job?.status;
-  return status === "queued" || status === "running";
+  return job?.status === "queued" || job?.status === "running";
 }
 
 export function isPending(document: DocumentSummary): boolean {
   return isOpen(document.latest_job);
 }
 
-export function failureReason(code: string | null): string {
+function failureReason(code: string | null): string {
   return jobErrors[code ?? ""] ?? "it failed";
 }
 
@@ -54,44 +53,26 @@ export function crawlStatus(job: Job | null): StatusView {
   if (isOpen(job)) return { label: "Crawling the site…", tone: "busy" };
   if (job.status === "failed")
     return { label: `Crawl failed: ${failureReason(job.error_code)}`, tone: "error" };
-  return settledCrawl(job);
-}
-
-/** A partial crawl skipped some pages for now, so it removed none. */
-function settledCrawl(job: Job): StatusView {
   if (job.status === "cancelled") return { label: "Crawl cancelled", tone: "idle" };
+  // A partial crawl skipped some pages for now, so it removed none.
   if (job.stage === "crawled_partial")
-    return { label: "Partly crawled: some pages could not be read, so none were removed", tone: "ready" };
+    return {
+      label: "Partly crawled: some pages could not be read, so none were removed",
+      tone: "ready",
+    };
   return { label: "Crawl finished", tone: "ready" };
 }
 
-function isFailed(document: DocumentSummary): boolean {
-  return document.latest_job?.status === "failed";
-}
-
-export function passages(count: number): string {
-  return count === 1 ? "1 passage" : `${count} passages`;
-}
-
-function busyStatus(document: DocumentSummary): StatusView {
-  if (document.latest_job?.error_code) return { label: "Retrying…", tone: "busy" };
-  const label = document.searchable ? "Updating index…" : "Indexing…";
-  return { label, tone: "busy" };
-}
-
-function failedStatus(document: DocumentSummary): StatusView {
-  const reason = failureReason(document.latest_job?.error_code ?? null);
-  return { label: `Failed: ${reason}`, tone: "error" };
-}
-
-function settledStatus(document: DocumentSummary): StatusView {
-  if (document.searchable)
-    return { label: `Ready · ${passages(document.chunk_count)}`, tone: "ready" };
-  return { label: "Not indexed", tone: "idle" };
-}
-
 export function documentStatus(document: DocumentSummary): StatusView {
-  if (isPending(document)) return busyStatus(document);
-  if (isFailed(document)) return failedStatus(document);
-  return settledStatus(document);
+  const job = document.latest_job;
+  if (isPending(document)) {
+    if (job?.error_code) return { label: "Retrying…", tone: "busy" };
+    return { label: document.searchable ? "Updating index…" : "Indexing…", tone: "busy" };
+  }
+  if (job?.status === "failed")
+    return { label: `Failed: ${failureReason(job.error_code)}`, tone: "error" };
+  if (!document.searchable) return { label: "Not indexed", tone: "idle" };
+  const count = document.chunk_count;
+  const passages = count === 1 ? "1 passage" : `${count} passages`;
+  return { label: `Ready · ${passages}`, tone: "ready" };
 }

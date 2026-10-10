@@ -3,10 +3,10 @@
 from uuid import uuid4
 
 import pytest
-from app.data.db.models.user import memberships
-from app.services.rules.errors import provider_unavailable
-from app.setup.api import create_app
-from app.utils.security import Identity
+from app.data.db import memberships
+from app.main import create_app
+from app.services.models import Identity
+from app.utils.errors import ContextMeshError
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
 from support import ask, create_source, drain, upload
@@ -196,7 +196,7 @@ def test_completed_replay_survives_provider_key_removal(
 def test_provider_failure_retry_reuses_saved_user_message(
     client, conversation_id, source_id, reasoning
 ):
-    reasoning.failure = provider_unavailable()
+    reasoning.failure = ContextMeshError("provider_unavailable")
     failed = ask(client, conversation_id, "Which approach?", "turn-key")
     reasoning.failure = None
     retry = ask(client, conversation_id, "Which approach?", "turn-key")

@@ -2,12 +2,17 @@ import type {
   AgentMetadata,
   CompletedTurn,
   Conversation,
+  DocumentSummary,
+  Evidence,
   Message,
   Page,
   SafeErrorBody,
+  Source,
+  UploadReceipt,
 } from "./contracts";
 
-const base = "/api/v1/assistant";
+const base = "/api/v1";
+const assistant = `${base}/assistant`;
 
 const errorMessages: Record<string, string> = {
   database_unavailable:
@@ -54,6 +59,17 @@ export class ApiError extends Error {
   }
 }
 
+export function describeError(error: unknown): string {
+  if (error instanceof ApiError) return error.message;
+  return "Could not reach the API. Check that the backend is running, then retry.";
+}
+
+async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(url, init);
+  if (!response.ok) throw await responseError(response);
+  return response.json() as Promise<T>;
+}
+
 async function responseError(response: Response): Promise<ApiError> {
   try {
     const body = (await response.json()) as SafeErrorBody;
@@ -63,27 +79,26 @@ async function responseError(response: Response): Promise<ApiError> {
   }
 }
 
-export async function requestJson<T>(url: string, init: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
-  if (!response.ok) throw await responseError(response);
-  return response.json() as Promise<T>;
+function postJson<T>(
+  url: string,
+  body: unknown,
+  signal?: AbortSignal,
+  headers: Record<string, string> = {},
+): Promise<T> {
+  return request(url, {
+    method: "POST",
+    signal,
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify(body),
+  });
 }
 
-function request<T>(path: string, init: RequestInit): Promise<T> {
-  return requestJson(`${base}${path}`, init);
-}
+const id = encodeURIComponent;
 
-export function describeError(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
-  return "Could not reach the API. Check that the backend is running, then retry.";
-}
-
-export function isCancelled(error: unknown): boolean {
-  return error instanceof DOMException && error.name === "AbortError";
-}
+// Assistant
 
 export function metadata(signal: AbortSignal): Promise<AgentMetadata> {
-  return request("", { signal });
+  return request(assistant, { signal });
 }
 
 export function conversations(
@@ -92,41 +107,28 @@ export function conversations(
 ): Promise<Page<Conversation>> {
   const query = new URLSearchParams({ limit: "20" });
   if (cursor !== null) query.set("cursor", cursor);
-  return request(`/conversations?${query}`, { signal });
+  return request(`${assistant}/conversations?${query}`, { signal });
 }
 
 export function createConversation(
   title: string,
   signal: AbortSignal,
 ): Promise<Conversation> {
-  return request("/conversations", {
-    method: "POST",
-    signal,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title }),
-  });
+  return postJson(`${assistant}/conversations`, { title }, signal);
 }
 
-async function messagePage(
-  id: string,
-  cursor: string | null,
-  signal: AbortSignal,
-): Promise<Page<Message>> {
-  const query = new URLSearchParams({ limit: "100" });
-  if (cursor !== null) query.set("cursor", cursor);
-  return request(`/conversations/${encodeURIComponent(id)}/messages?${query}`, {
-    signal,
-  });
-}
-
+/** Every message of a conversation, following page cursors to the end. */
 export async function history(
-  id: string,
+  conversationId: string,
   signal: AbortSignal,
 ): Promise<Message[]> {
-  let cursor: string | null = null;
   const items: Message[] = [];
+  let cursor: string | null = null;
   do {
-    const page = await messagePage(id, cursor, signal);
+    const query = new URLSearchParams({ limit: "100" });
+    if (cursor !== null) query.set("cursor", cursor);
+    const path = `${assistant}/conversations/${id(conversationId)}/messages?${query}`;
+    const page: Page<Message> = await request(path, { signal });
     items.push(...page.items);
     cursor = page.next_cursor;
   } while (cursor !== null);
@@ -135,24 +137,74 @@ export async function history(
 
 export interface TurnRequest {
   message: string;
+  /** null searches every eligible source. */
   sourceIds: string[] | null;
 }
 
-function turnBody(turn: TurnRequest): string {
-  if (turn.sourceIds === null) return JSON.stringify({ message: turn.message });
-  return JSON.stringify({ message: turn.message, source_ids: turn.sourceIds });
-}
-
 export function sendMessage(
-  id: string,
+  conversationId: string,
   turn: TurnRequest,
   key: string,
   signal: AbortSignal,
 ): Promise<CompletedTurn> {
-  return request(`/conversations/${encodeURIComponent(id)}/messages`, {
+  const body =
+    turn.sourceIds === null
+      ? { message: turn.message }
+      : { message: turn.message, source_ids: turn.sourceIds };
+  const path = `${assistant}/conversations/${id(conversationId)}/messages`;
+  return postJson(path, body, signal, { "Idempotency-Key": key });
+}
+
+// Sources
+
+export async function sources(signal: AbortSignal): Promise<Source[]> {
+  const page = await request<{ items: Source[] }>(`${base}/sources`, { signal });
+  return page.items;
+}
+
+export interface SourceRequest {
+  name: string;
+  description: string;
+  /** A URL registers a website to crawl; without one the source holds uploaded files. */
+  url: string | null;
+}
+
+export function createSource(source: SourceRequest): Promise<Source> {
+  return postJson(`${base}/sources`, source);
+}
+
+export function syncSource(sourceId: string): Promise<{ job_id: string }> {
+  return request(`${base}/sources/${id(sourceId)}/sync`, { method: "POST" });
+}
+
+export function deleteSource(sourceId: string): Promise<{ job_id: string }> {
+  return request(`${base}/sources/${id(sourceId)}`, { method: "DELETE" });
+}
+
+export async function sourceDocuments(
+  sourceId: string,
+  signal: AbortSignal,
+): Promise<DocumentSummary[]> {
+  const path = `${base}/sources/${id(sourceId)}/documents`;
+  const page = await request<{ items: DocumentSummary[] }>(path, { signal });
+  return page.items;
+}
+
+export function uploadDocument(sourceId: string, file: File): Promise<UploadReceipt> {
+  const form = new FormData();
+  form.append("file", file);
+  return request(`${base}/sources/${id(sourceId)}/documents`, {
     method: "POST",
-    signal,
-    headers: { "Content-Type": "application/json", "Idempotency-Key": key },
-    body: turnBody(turn),
+    body: form,
   });
+}
+
+export function deleteDocument(documentId: string): Promise<{ job_id: string }> {
+  return request(`${base}/documents/${id(documentId)}`, { method: "DELETE" });
+}
+
+export function evidence(path: string, signal: AbortSignal): Promise<Evidence> {
+  if (!path.startsWith(`${base}/documents/`))
+    return Promise.reject(new Error("Unexpected evidence path."));
+  return request(path, { signal });
 }

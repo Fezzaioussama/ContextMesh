@@ -210,27 +210,21 @@ reranking uses a deterministic term-coverage baseline. Dependencies are locked i
 
 OCR, recursive crawling, enterprise OAuth, live SQL/API tools, and distributed microservices are later extensions.
 
-## Design documents
+## Documentation
 
 | Document | Purpose |
 | --- | --- |
-| [Architecture](docs/architecture.md) | Runtime, module boundaries, data model, ingestion, and agent workflow |
-| [Contracts](docs/contracts.md) | Connector and provider interfaces, durable jobs, API shapes, and citations |
-| [Implementation roadmap](docs/roadmap.md) | Ordered milestones, dependencies, tasks, and acceptance criteria |
-| [Architecture decisions](docs/decisions.md) | Proposed decisions, tradeoffs, and conditions for revisiting them |
-| [Quality and evaluation](docs/quality.md) | Access control, failure cases, test strategy, and retrieval evaluation |
-| [Implementation agents](docs/agents.md) | Six specialist roles, ownership, and independent architecture review |
-| [Engineering rules](docs/engineering.md) | SOLID, pattern selection, automated dependency checks, file and complexity limits |
-| [Repository layout](docs/repository-layout.md) | Shared configuration ownership, workspaces, Docker and developer commands |
-| [Repository layout verification](docs/repository-layout-verification.md) | Observed consolidation checks and limitations |
+| [User-story flows](docs/flows.md) | Each user story traced file by file, with the log lines it writes |
+| [Backend guide](backend/README.md) | Backend layout, ingestion, websites, querying, and how to run and test it |
+| [Frontend guide](frontend/README.md) | The browser workspace |
 
-Start with the architecture, then follow milestones **M1–M5** to reach the MVP. The first implementation milestone is a working development environment and a tested domain/persistence foundation.
+## Checks
 
-## Development agents and checks
-
-Project-scoped Codex roles in `.codex/agents/` cover backend, ingestion, retrieval, frontend, QA, and architecture review. All implementation roles follow SOLID and the documented architecture, with at most **1,000 physical lines per maintained file** and **cyclomatic complexity 4 per function/method**.
-
-Run `make quality-setup`, `make quality`, and `make quality-test` from the repository root. The tooling validates these limits and selected import boundaries; the architecture guardian separately reviews design and behavior. See the [agent workflow](docs/agents.md) and [measurement policy](docs/engineering.md) for details. `make app-test` and `make smoke` check the application behavior separately.
+`make quality` runs Ruff (lint, format, cyclomatic complexity at most 10) and ESLint
+(the same complexity limit, files at most 1,000 lines). `make app-test` runs the
+backend and frontend tests and the frontend build; `make smoke` drives the real app
+in a browser. Project-scoped Codex roles in `.codex/agents/` cover backend,
+ingestion, retrieval, frontend, QA, and architecture review.
 
 ## Portfolio demonstration
 
@@ -238,8 +232,8 @@ Use a synthetic corpus containing an authentication decision record, a platform 
 
 The agent and retrieval pipeline exist; the versioned evaluation corpus, judged
 questions, and the baseline-versus-agent benchmark do not yet. The conventional
-retrieval path sits behind the same `EvidenceSearch` port the agent uses, but no
-evaluation harness selects it yet. This ships the agent before the measured
+retrieval path (`HybridRetriever`) is the same search the agent uses, but no
+evaluation harness runs it on its own yet. This ships the agent before the measured
 baseline that ADR 006 asks for; record that deviation in the decision log when it
 is restored. Deterministic application checks do not establish retrieval quality
 or live-model benchmarks.

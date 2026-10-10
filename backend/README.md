@@ -8,39 +8,43 @@ a rebuildable vector projection; uploads live in a blob store.
 ```text
 backend/
   app/
-    main.py                     # Uvicorn factory (API)
-    worker.py                   # `python -m app.worker` (ingestion worker)
-    controllers/                # HTTP: routes (chat, sources, health), error mapping
-      schemas/                  #   request/response shapes published to the frontend
-    services/                   # What the app does, one area per user story
-      sources.py                #   add sources, upload, delete, show evidence
-      assistant.py              #   ask a question: claim turn, run agent, save answer
-      retrieval.py              #   hybrid search + deterministic reranker
-      agent/                    #   plan, gather, assess, write, check, release; graph.py
-      ingestion/                #   worker loop, indexer, website crawler, erasers
-      ports/                    #   interfaces the services need (stores, models, web)
-      rules/                    #   pure business rules: chunking, ranking, citations,
-                                #     uploads, URLs, validation (no frameworks or I/O)
-    data/                       # Everything that stores or fetches data
-      db/                       #   SQLAlchemy tables and repositories (PostgreSQL)
-      vectors/                  #   Qdrant vector index
-      blobs/                    #   uploaded/crawled file storage
-      llm/                      #   OpenAI-compatible model and embedding clients
-      web/                      #   guarded HTTP fetcher (public destinations only)
-    utils/                      # config, errors, security, logging (flow events)
-      parsers/                  #   Markdown/text, HTML, PDF, Word, PowerPoint, Excel
-    setup/                      # Wiring: picks concrete data classes for API and worker
-  migrations/versions/          # 0001 assistant … 0004 formats and websites
+    main.py              # API process: create_app (Uvicorn factory)
+    worker.py            # ingestion worker process: `python -m app.worker`
+    wiring.py            # picks the concrete classes for both processes
+    controllers/         # HTTP: routes and their request/response shapes
+      chat.py            #   assistant: conversations, messages, metadata
+      sources.py         #   sources, documents, jobs, evidence
+      http.py            #   health checks, server identity, safe error responses
+    services/            # what the app does, one module per user story
+      models.py          #   the values every layer shares (sources, passages, answers…)
+      chat.py            #   ask a question: replay or claim the turn, run agent, save
+      sources.py         #   add sources, upload, delete, show evidence
+      retrieval.py       #   hybrid search + deterministic reranker
+      indexing.py        #   worker loop, indexer, chunking, erasers
+      crawler.py         #   bounded website crawl
+      validation.py      #   input rules (messages, titles, uploads)
+      urls.py            #   URL rules (canonical URLs, crawl scope)
+      agent/             #   steps.py (each step), graph.py (LangGraph), state.py, prompts.py
+    data/                # everything that stores or fetches data
+      db.py              #   PostgreSQL tables, engine, readiness
+      chat.py            #   conversations, turns, saved answers
+      sources.py         #   sources, documents, versions
+      jobs.py            #   durable job queue
+      indexing.py        #   worker-side publication and crawl writes
+      retrieval.py       #   catalog, keyword search, passage hydration
+      qdrant.py, blobs.py, llm.py, fetcher.py, tracing.py
+    utils/               # config, errors, logging (flow events), document parsers
+  migrations/versions/   # 0001 assistant … 0004 formats and websites
   scripts/start_{api,worker}.sh
   tests/{unit,integration,e2e}/
 ```
 
 A request flows **controllers → services → data**. Controllers only translate
-HTTP; services hold the use cases and depend on `services/ports` interfaces, which
-the `data` classes implement; `services/rules` stays free of frameworks and I/O so
-it is easy to read and test; `utils` is shared by everyone; `setup` is the only
-place that chooses concrete classes. Tests inject replacements through
-`create_app(settings, services, identity)`.
+HTTP; services hold the use cases and call the `data` classes directly; `wiring.py`
+is the only place that chooses concrete classes. The model clients (`ReasoningModel`,
+`EmbeddingModel`, `DecisionModel` in `services/models.py`) are the only interfaces,
+because each has a real adapter, a LangSmith-traced wrapper, and test doubles. Tests
+inject replacements through `create_app(settings, services, identity)`.
 
 To follow a user story through the code or the logs, read
 [docs/flows.md](../docs/flows.md). Both processes log one line per step, e.g.
@@ -78,14 +82,14 @@ deadline (twice `CONTEXTMESH_WEB_TIMEOUT_SECONDS`, redirects included).
 
 ## Querying
 
-The agent is a bounded LangGraph state machine whose nodes are application
-services, grouped into `routing`, `research`, and `answering` subgraphs. An optional Jev decision step, given the searchable source names and the
+The agent is a bounded LangGraph state machine whose nodes are the `Agent`'s
+steps, grouped into `routing`, `research`, and `answering` subgraphs. An optional Jev decision step, given the searchable source names and the
 user's recent requests, first routes self-contained conversation to
 **direct answer → release**; source-specific, private, current, and uncertain
 questions use **plan → retrieve → assess ⟲ expand → answer → verify ⟲ repair
 → release**. Direct answers are explicitly citation-free. Classifier failures and
 low-confidence choices conservatively take the retrieval path. Server policy
-(`services/agent/policy.py`) limits rounds (3), query
+(`AgentPolicy` in `services/agent/state.py`) limits rounds (3), query
 variants (2), repairs (1), claims, context passages, and the deadline (60 s by
 default) plus a total token budget; model output can never raise them. Every structured model reply is
 schema-checked; unknown source or passage IDs are dropped. Only hydrated passages
@@ -128,9 +132,8 @@ with the browser smoke against the same database. Without the database variable,
 integration tests skip; without the Qdrant variable, only the Qdrant server tests
 skip (the rest use an in-memory Qdrant).
 
-Files stay at most 1,000 physical lines and functions at cyclomatic complexity 4
-(Radon and Ruff C901). Independent architecture review remains required alongside
-automated checks.
+`make quality` runs Ruff (lint, format, and a cyclomatic complexity limit of 10) and
+ESLint.
 
 ## Known limits
 

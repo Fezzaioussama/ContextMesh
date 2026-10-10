@@ -2,9 +2,8 @@
 
 from dataclasses import replace
 
-from app.services.ports.decisions import ChoiceReply
-from app.services.rules.models import Usage
-from app.setup.api import create_app
+from app.main import create_app
+from app.services.models import ChoiceReply, Usage
 from fastapi.testclient import TestClient
 from support import ask
 

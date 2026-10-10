@@ -3,11 +3,11 @@
 from uuid import UUID, uuid4
 
 import pytest
-from app.data.db.models.knowledge import chunks
-from app.data.db.repositories.retrieval_repository import RetrievalRepository, lexical_expression
-from app.services.rules.errors import VectorIndexUnavailable
-from app.setup.api import create_app
-from app.utils.security import Identity
+from app.data.db import chunks
+from app.data.retrieval import RetrievalRepository, lexical_expression
+from app.main import create_app
+from app.services.models import Identity
+from app.utils.errors import VectorIndexUnavailable
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from support import ask, create_source, drain, upload

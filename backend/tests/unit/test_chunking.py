@@ -1,10 +1,10 @@
 """Chunking keeps sections apart, bounds size, and derives stable chunk identities."""
 
 import pytest
-from app.services.rules.chunking import ChunkingPolicy, chunk_elements, estimate_tokens
-from app.services.rules.errors import IngestionFailure
-from app.services.rules.knowledge import Element
-from app.utils.parsers.blocks import BlockParser
+from app.services.indexing import ChunkingPolicy, chunk_elements, estimate_tokens
+from app.services.models import Element
+from app.utils.errors import IngestionFailure
+from app.utils.parsers import parse_markdown, parse_text
 
 MARKDOWN = b"""# Platform handbook
 
@@ -25,7 +25,7 @@ Billing goes first.
 
 
 def test_markdown_paragraphs_keep_heading_path_and_line_range():
-    elements = BlockParser(markdown=True).parse(MARKDOWN)
+    elements = parse_markdown(MARKDOWN)
     assert [
         (element.heading_path, element.line_start, element.line_end) for element in elements
     ] == [
@@ -38,12 +38,12 @@ def test_markdown_paragraphs_keep_heading_path_and_line_range():
 
 
 def test_sibling_heading_replaces_the_previous_branch():
-    elements = BlockParser(markdown=True).parse(b"# A\n## B\nfirst\n## C\nsecond\n# D\nthird\n")
+    elements = parse_markdown(b"# A\n## B\nfirst\n## C\nsecond\n# D\nthird\n")
     assert [element.heading_path for element in elements] == [("A", "B"), ("A", "C"), ("D",)]
 
 
 def test_plain_text_never_interprets_markdown_headings():
-    elements = BlockParser(markdown=False).parse(b"# literal\nline two\n\nNext paragraph")
+    elements = parse_text(b"# literal\nline two\n\nNext paragraph")
     assert [(element.text, element.heading_path) for element in elements] == [
         ("# literal\nline two", ()),
         ("Next paragraph", ()),
@@ -53,13 +53,13 @@ def test_plain_text_never_interprets_markdown_headings():
 @pytest.mark.parametrize("content", [b"\xff\xfe broken", b"text\x00with nul"])
 def test_undecodable_or_binary_content_is_an_explicit_failure(content):
     with pytest.raises(IngestionFailure) as failure:
-        BlockParser(markdown=True).parse(content)
+        parse_markdown(content)
     assert failure.value.code == "invalid_encoding"
     assert failure.value.retryable is False
 
 
 def test_byte_order_mark_is_not_indexed():
-    assert BlockParser(markdown=False).parse(b"\xef\xbb\xbfHello").__getitem__(0).text == "Hello"
+    assert parse_text(b"\xef\xbb\xbfHello").__getitem__(0).text == "Hello"
 
 
 LONG_PARAGRAPH = " ".join(f"word{index}" for index in range(55))

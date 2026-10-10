@@ -3,68 +3,43 @@
 ## Scope and source of truth
 
 ContextMesh is an Agentic RAG modular monolith with separate API and ingestion
-worker processes. Read the relevant contracts before changing code:
+worker processes. Read the relevant guides before changing code:
 
-- `docs/architecture.md`: target layout, dependencies, publication, and access rules.
-- `docs/contracts.md`: domain vocabulary, ports, events, and transport contracts.
-- `docs/decisions.md`: proposed architectural baseline and revisit conditions.
-- `docs/roadmap.md`: milestone scope and observable acceptance criteria.
-- `docs/quality.md`: product behavior, failure cases, and evaluation requirements.
-- `docs/engineering.md`: mandatory engineering limits and automated checks.
-- `docs/agents.md`: configured roles and the coordination workflow.
 - `docs/flows.md`: each user story traced file by file, with its log lines.
 - `backend/README.md`: the backend folder layout and what belongs where.
 
-Work only on the assigned milestone and files. Configuring agents and checks does
-not authorize application implementation. Planned integrations and tests must not
+Work only on the assigned task and files. Planned integrations and tests must not
 be described as implemented or passing before evidence exists.
 
-## Hard limits
+## Limits
 
-- Every maintained first-party text file has **at most 1,000 physical lines**,
-  including blank lines and comments. Exclusions for generated and vendored
-  artifacts are explicit in the engineering policy; do not invent exemptions.
-- Every Python function or method, including nested functions, has **cyclomatic
-  complexity at most 4**, measured by the configured Radon and Ruff C901 gates.
-- Every JavaScript/TypeScript function or method, including nested functions,
-  has **cyclomatic complexity at most 4**, measured by ESLint's classic variant.
-- These thresholds are ceilings, not targets. Refactor into cohesive operations
-  when a limit is approached. Do not hide branches in clever expressions, add
-  suppression comments, exclude ordinary source code, or split files solely to
-  manipulate a metric.
-- Agents cannot waive limits, weaken rules, or widen exclusions to pass a task.
-  Explain a conflict to the coordinator and propose a compliant design.
+- Every maintained first-party text file has **at most 1,000 physical lines**.
+- Every Python and JavaScript/TypeScript function has **cyclomatic complexity at
+  most 10**, checked by Ruff C901 and ESLint's classic variant.
+- Do not add suppression comments, exclude ordinary source code, or split functions
+  or files only to satisfy a metric.
 
-## Design obligations
+## Design
 
-Follow SOLID through concrete responsibilities and behavior: cohesive components,
-extensions behind stable contracts, substitutable adapters, small consumer-focused
-ports, and dependencies on abstractions at application boundaries. Apply each
-principle where relevant; avoid unnecessary interfaces and class hierarchies.
-
-Use patterns to solve named problems. Prefer ports/adapters and dependency
-injection for integrations, repositories for persistence boundaries, Strategy for
-interchangeable behavior, and explicit state transitions for workers and queries
-when these fit the accepted architecture. Explain any new pattern's purpose.
+Keep the code simple and direct. Prefer one readable function or class over extra
+layers, and keep a helper next to its only caller. Add an interface (`Protocol`)
+only when real alternative implementations exist; today that is the three model
+clients in `services/models.py` (real adapter, LangSmith-traced wrapper, test
+doubles). Tests substitute plain duck-typed doubles.
 
 The backend (`backend/app`) is organized as `controllers -> services -> data`:
 
-- `controllers/` translate HTTP (routes, `schemas/`, error mapping) and call
-  services only.
-- `services/` hold the use cases, one area per user story. They own their
-  interfaces in `services/ports/` and must not import `data`, `controllers`, or
-  `setup`; from `utils` they import only `exceptions`, `security`, and `logging`.
-  `services/rules/` holds pure business rules and imports only the standard
-  library, other rules, and `utils.exceptions`/`utils.security`. The one framework
-  in `services` is LangGraph, confined to `services/agent/graph.py`, which only
-  sequences agent steps.
-- `data/` implements the ports: PostgreSQL (`db`), Qdrant (`vectors`), blobs,
-  model clients (`llm`), and the guarded web fetcher (`web`).
-- `utils/` imports nothing from `controllers`, `data`, or `setup`. Its
-  `exceptions`, `security`, and `logging` modules may be used by every layer;
-  `config` and the concrete `parsers` (PDF, Office, HTML libraries) are imported
-  only by `setup`, `migrations`, tests, and each other.
-- `setup/` is the only place that chooses concrete classes for the API and worker.
+- `controllers/` translate HTTP (routes, request/response models, error mapping)
+  and call services only.
+- `services/` hold the use cases, one module per user story, and call `data`
+  classes directly. `services/models.py` holds the values every layer shares.
+  LangGraph is confined to `services/agent/graph.py`, which only sequences the
+  agent's steps.
+- `data/` talks to PostgreSQL, Qdrant, blobs, model providers, and the web.
+- `utils/` holds config, errors, logging, and document parsers; it imports nothing
+  from `controllers` or `data`.
+- `wiring.py` is the only place that chooses concrete classes for the API and
+  worker.
 
 Every user-story step logs a `flow_event` (`app/utils/logging.py`) with ids and
 counts only, and `docs/flows.md` is updated when a flow changes. The frontend
@@ -72,8 +47,7 @@ uses HTTP contracts and never imports backend internals.
 
 Preserve ingestion/query separation, typed boundaries, canonical PostgreSQL
 visibility and publication, bounded agent execution, authorization checks, and
-canonical citations. Use the ADR process for substantive architecture changes;
-an ADR does not silently override a user requirement or a hard limit.
+canonical citations.
 
 ## Coordination
 
@@ -106,12 +80,10 @@ convert routine review into an additional user approval flow.
 
 ## Verification and handoff
 
-Run `make quality` for automated limits and dependency rules. Run
-`make quality-test` when configuring or changing the quality tooling. Run the
-meaningful application tests, type checks, builds, and integrations applicable to
-the implemented behavior; these exist only after their corresponding milestone
-creates them. Do not invent placeholder successes or imply these two commands
-test an application that has not been implemented.
+Run `make quality` for lint, formatting, and the limits above, and `make app-test`
+for the backend and frontend tests and the frontend build; add `make smoke` for
+changes that cross the API, worker, and browser. Do not invent placeholder
+successes.
 
 Choose tests from observable behavior, contract guarantees, and failure modes.
 Avoid tests that merely mirror private methods or reversible documentation edits.
@@ -121,3 +93,16 @@ Each handoff states changed files, behavior, design rationale, exact checks and
 outcomes, unresolved limitations, and any requested contract changes. Review
 handoffs use `PASS`, `FAIL`, or `BLOCKED` when required evidence is unavailable,
 with actionable findings carrying `file:line` references and measurable evidence.
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+When the user types `/graphify`, use the installed graphify skill or instructions before doing anything else.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

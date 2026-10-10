@@ -1,5 +1,5 @@
 import type { AgentMetadata } from "../../api/contracts";
-import { Icon } from "../../components/Icon";
+import { Icon } from "../../components/ui";
 
 export function AgentStatus({
   agent,

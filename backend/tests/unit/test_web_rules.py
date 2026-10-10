@@ -1,14 +1,14 @@
 """URL rules: what a website source accepts, how URLs compare, and what a crawl covers."""
 
 import pytest
-from app.services.rules.web import (
+from app.services.urls import (
     canonical_url,
     checked_start_url,
     crawl_scope,
     page_title,
     resolved_link,
 )
-from app.utils.exceptions import ContextMeshError
+from app.utils.errors import ContextMeshError
 
 
 @pytest.mark.parametrize(

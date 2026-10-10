@@ -3,14 +3,9 @@
 from uuid import uuid4
 
 import pytest
-from app.services.ingestion.worker import IngestionWorker
-from app.services.rules.errors import (
-    IngestionFailure,
-    LeaseLost,
-    VectorIndexUnavailable,
-    provider_unavailable,
-)
-from app.services.rules.knowledge import ClaimedJob
+from app.services.indexing import IngestionWorker
+from app.services.models import ClaimedJob
+from app.utils.errors import ContextMeshError, IngestionFailure, LeaseLost, VectorIndexUnavailable
 
 
 class Queue:
@@ -43,7 +38,7 @@ def job(kind="document.index_requested"):
     [
         (IngestionFailure("invalid_encoding"), ("invalid_encoding", False)),
         (IngestionFailure("index_verification_failed", True), ("index_verification_failed", True)),
-        (provider_unavailable(), ("provider_unavailable", True)),
+        (ContextMeshError("provider_unavailable"), ("provider_unavailable", True)),
         (VectorIndexUnavailable(), ("vector_index_unavailable", True)),
         (RuntimeError("private detail"), ("internal_error", True)),
     ],

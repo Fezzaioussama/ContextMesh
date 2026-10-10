@@ -1,193 +1,102 @@
 # User-story flows
 
-Each section follows one user story from the browser to the database, file by
-file, and lists the log lines it writes. All paths are under `backend/app/`.
+Each user story, file by file, with the log lines it writes. Paths are under
+`backend/app/`. For the classes and diagrams, see [guide.md](guide.md).
 
-Both processes print one line per step, with ids and counts only (never document
-text, questions or answers):
-
-```text
-2026-10-07 22:41:03 context_mesh.flow flow=upload_document step=accepted document_id=… job_id=… duplicate=False
-```
-
-To follow one story, filter by its name. To follow a single run, filter by its id:
-every line written during a worker job carries its `job_id`, and every line of a
-question carries its `conversation_id` (and `turn_id` once the turn has started),
-even when several runs overlap:
+Both processes log one line per step, with ids and counts only (never document text,
+questions, or answers). Filter by flow name, or by `job_id` / `turn_id` to follow one
+run:
 
 ```bash
 docker compose logs -f api worker | grep "flow=crawl_website"
 docker compose logs api worker | grep "job_id=<id>"
-docker compose logs api | grep "turn_id=<id>"
 ```
 
-Every request has three layers: **controllers** (HTTP in and out) → **services**
-(the use case) → **data** (PostgreSQL, Qdrant, blobs, model and web clients).
-Work that takes time is a durable job in PostgreSQL that the worker picks up.
-
-| Flow name | User story | Starts in |
+| Flow | User story | Runs in |
 | --- | --- | --- |
 | `add_source` | Create a source (files or website) | API |
 | `upload_document` | Upload a file and get it indexed | API, then worker |
 | `crawl_website` | Crawl a website source | API, then worker |
-| `ask_question` | Ask a question and get a direct or cited answer | API |
-| `delete_document` / `delete_source` | Remove a document or a source | API, then worker |
+| `ask_question` | Ask a question, get a direct or cited answer | API |
+| `delete_document` / `delete_source` | Remove a document or source | API, then worker |
 
----
+## `add_source`
 
-## `add_source`: create a source
-
-1. `controllers/sources.py` `create_source`: `POST /api/v1/sources` with
-   name, description, and optional `url`.
+1. `controllers/sources.py` `create_source` (`POST /api/v1/sources`).
 2. `services/sources.py` `SourceService.create`: a `url` makes a website source,
-   validated by `services/rules/web.py` `checked_start_url` (public http(s), no
-   credentials or custom port, ASCII form).
-3. `data/db/repositories/source_repository.py` `create` saves the row.
+   checked by `services/urls.py` `checked_start_url`.
+3. `data/sources.py` `SourceRepository.create`.
 
-Log: `step=created source_id=… kind=upload|website`.
+Log: `step=created source_id=… kind=…`
 
-## `upload_document`: upload a file and get it indexed
+## `upload_document`
 
-**API (fast, synchronous)**
+1. `controllers/sources.py` `upload_document` (`POST /api/v1/sources/{id}/documents`).
+2. `SourceService.upload`: `services/validation.py` `checked_upload` checks name, type,
+   and size; `data/blobs.py` stores the bytes; `SourceRepository.register_upload`
+   records a version and its index job in one transaction (identical content is a
+   duplicate, with no job).
+3. Worker: `services/indexing.py` `IngestionWorker` claims the job (`data/jobs.py`),
+   and `DocumentIndexer` parses (`utils/parsers.py`), chunks, embeds (`data/llm.py`),
+   writes vectors (`data/qdrant.py`), and publishes (`data/indexing.py`), unless the
+   document was deleted or replaced meanwhile.
 
-1. `controllers/sources.py` `upload_document`:
-   `POST /api/v1/sources/{id}/documents` (multipart). Rejects bodies over the
-   declared size limit early.
-2. `services/sources.py` `SourceService.upload`:
-   - `services/rules/uploads.py` `checked_upload` checks name, type and size;
-   - `data/blobs/filesystem.py` writes the bytes;
-   - `data/db/repositories/source_repository.py` `register_upload` (via
-     `version_records.py` `record_version`) stores an immutable document version
-     and enqueues a `document.index_requested` job in the same transaction.
-     Identical content is a duplicate and creates no job.
-3. Response `202` with the document and `job_id`. The frontend polls
-   `GET /api/v1/sources/{id}/documents` until the document is searchable.
+Logs: `step=accepted document_id=… job_id=… duplicate=…`, then `job_started`,
+`job_ended` or `job_failed code=… retry=…`. `job_cancelled code=obsolete` means
+nothing was indexed; `lease_lost` means another worker took over.
 
-Log: `step=accepted document_id=… job_id=… duplicate=…`.
+## `crawl_website`
 
-**Worker (background)**
+1. `controllers/sources.py` `sync_source` (`POST /api/v1/sources/{id}/sync`) →
+   `SourceRepository.request_sync` enqueues a crawl, or returns the open one.
+2. Worker: `services/crawler.py` `SiteCrawler` reads `robots.txt`, fetches the start
+   page (its final URL sets the scope), then walks links breadth-first within scope,
+   depth, and page limits. Each page is fetched by `data/fetcher.py` (public addresses
+   only) and saved by `CrawlRepository.register_page`, which enqueues indexing.
+3. `CrawlRepository.finish` removes pages missing from a **complete** crawl only; a
+   partial crawl (`crawled_partial`) removes nothing.
 
-4. `services/ingestion/worker.py` `IngestionWorker.run_once` claims the job
-   (`data/db/repositories/job_repository.py`, `FOR UPDATE SKIP LOCKED`, lease
-   and fencing token).
-5. `services/ingestion/indexer.py` `DocumentIndexer.handle`:
-   - parse with the parser for the media type (`utils/parsers/registry.py`:
-     PDF, Word, PowerPoint, Excel, HTML, Markdown/text);
-   - chunk with `services/rules/chunking.py` (never across headings, pages or
-     slides);
-   - embed (`data/llm/embeddings.py`) and write vectors (`data/vectors/qdrant.py`);
-   - `data/db/repositories/indexing_repository.py` `publish` makes the new
-     generation visible, unless the document was deleted, replaced, or the lease
-     was lost.
+Logs: `step=requested`, then `page_recorded`, `page_unchanged`, or
+`page_skipped code=…` per page, then `crawled pages=… complete=…`. URLs are logged
+without their query string.
 
-Logs: `step=job_started job_id=… attempt=1`, then `step=job_ended` or
-`step=job_failed code=… retry=True|False` (`lease_lost` if another worker took the
-job over). `step=job_cancelled code=obsolete` before `job_ended` means the document
-was deleted or replaced meanwhile, so nothing was indexed. Failure codes appear in
-the UI (for example `ocr_required` for scanned PDFs).
+## `ask_question`
 
-## `crawl_website`: crawl a website source
+1. `controllers/chat.py` `send_message`
+   (`POST /api/v1/assistant/conversations/{id}/messages`, `Idempotency-Key` header).
+2. `services/chat.py` `ConversationService.send`: a repeated key returns the saved
+   answer; otherwise `ChatRepository` (`data/chat.py`) claims the turn, the agent
+   runs with no transaction open, and the answer and citations are saved.
+3. The agent (`services/agent/`) is one LangGraph run. **route** (Jev classifier)
+   picks a path; uncertain or unavailable routing retrieves:
+   - grounded: plan → retrieve (`services/retrieval.py`) → assess (may search
+     again) → generate → verify → repair (once) → release;
+   - direct (greetings, rewriting, general reasoning): direct → release, no
+     citations.
+4. With `LANGSMITH_TRACING=true`, the turn is one LangSmith run `ask_question`
+   (`data/tracing.py`). The worker is never traced.
 
-**API**
-
-1. `controllers/sources.py` `sync_source`: `POST /api/v1/sources/{id}/sync`.
-2. `services/sources.py` `SourceService.sync` →
-   `source_repository.py` `request_sync` enqueues `source.sync_requested`
-   (or returns the crawl already open).
-
-Log: `step=requested source_id=… job_id=…`.
-
-**Worker**
-
-3. `services/ingestion/crawler.py` `SiteCrawler.handle`:
-   - `RobotsRules` reads `robots.txt` (missing: allowed; unreachable: the job
-     fails and retries);
-   - the start page is fetched first; its final address sets the scope
-     (`services/rules/web.py` `crawl_scope`);
-   - `Frontier` walks links breadth-first within the scope, depth and page limits;
-   - each page goes through `data/web/fetcher.py` `SafeHttpFetcher` (public
-     addresses only, size cap, wall-clock deadline) and is stored by
-     `data/db/repositories/crawl_repository.py` `register_page` as a document
-     version, which enqueues normal indexing (see `upload_document`, worker part);
-   - `crawl_repository.py` `finish` retires pages missing from a **complete**
-     crawl, only within the part of the site it covered. A partial crawl ends with
-     stage `crawled_partial` and removes nothing.
-
-Logs (all with the crawl's `job_id`): `step=job_started`, then per page
-`step=page_recorded url=…` (new content), `step=page_unchanged url=…`, or
-`step=page_skipped url=… code=…`; then `step=crawled pages=… complete=…` and
-`step=job_ended` (or `job_failed`, e.g. `code=robots_disallowed`). Page URLs are
-logged without their query string, which may carry tokens.
-
-## `ask_question`: ask a question and get a direct or cited answer
-
-1. `controllers/chat.py` `send_message`:
-   `POST /api/v1/assistant/conversations/{id}/messages` with an
-   `Idempotency-Key` header.
-2. `services/chat_service.py` `ConversationService.send` →
-   `services/assistant.py` `Assistant.send`:
-   - a repeated key returns the saved answer
-     (`data/db/repositories/turn_repository.py` `replay`);
-   - otherwise the turn is claimed (`claim`), the agent runs, and the answer with
-     any citations is saved (`complete`).
-3. The agent (`services/agent/graph.py`, steps in `services/agent/steps.py`) is
-   one LangGraph run of three subgraphs: `routing` (route, direct), `research`
-   (plan, retrieve, assess), and `answering` (generate, verify, repair), then
-   **release**. **route** (`router.py`, Jev typed decision) chooses one of two bounded paths.
-   Jev sees the request, the user's last `route_history_requests` messages (never
-   assistant replies, which would bias it toward repeating the previous route), and
-   the names and descriptions of searchable sources, so general-looking questions
-   about an indexed topic still retrieve:
-   - Questions that need indexed, current, private, or source-specific facts use
-     **plan** (`planner.py`) → **retrieve** (`gather.py`, hybrid search in
-     `services/retrieval.py`: PostgreSQL full text + Qdrant, fused and reranked) →
-     **assess** (`assessor.py`, may search again) → **generate** (`writer.py`) →
-     **verify** (`checker.py`) → **repair** (once, if needed) → **release**
-     (`release.py`).
-   - Greetings, transformations, creative work, and other questions that need no
-     resource use **direct** (`direct.py`) → **release**, with no citations.
-   Low-confidence or unavailable routing falls back to retrieval. Limits (rounds,
-   tokens, deadline) are in `policy.py`; generative calls go through
-   `data/llm/openai.py`, and typed routing goes through `data/llm/decisions.py`.
-4. Optional tracing: with `LANGSMITH_TRACING=true`, `setup/tracing.py` wraps the
-   agent's model, decision, embedding, and search ports (`data/tracing/models.py`,
-   `data/tracing/retrieval.py`), and `data/tracing/scope.py` sends the turn to
-   LangSmith as one `ask_question` run tagged with `conversation_id`, `turn_id`,
-   and `workspace_id`. Each phase, node, model call (`llm`), and `hybrid_search`
-   (`retriever`) nests under it, with full content. The ingestion worker is not traced.
-
-Logs (all with `conversation_id`, and `turn_id` from `turn_started` on):
-`step=turn_started`, then `step=agent_route` and, when Jev answered,
-`step=route_decided route=… p_direct=… confidence=…`; a grounded path logs
-`agent_plan`, `agent_retrieve`, `agent_assess`, `agent_generate`, `agent_verify`,
-`agent_repair` per graph step,
-while a direct path logs `agent_direct`. Both end with
-`step=answered status=… citations=… tokens=…` or `step=failed code=…`.
-A replay logs `step=replayed`. A question refused before a turn starts (unknown
-source filter, a turn already in progress, a reused key with another message)
-logs only `step=rejected code=…`.
+Logs: `turn_started`, `agent_<step>` per step, `route_decided route=… p_direct=…`,
+then `answered status=… citations=… tokens=…` or `failed code=…`. A replay logs
+`replayed`; a refusal before the turn starts logs `rejected code=…`.
 
 ## `delete_document` / `delete_source`
 
-1. `controllers/sources.py` `delete_document` / `delete_source`
-   (`DELETE /api/v1/documents/{id}`, `DELETE /api/v1/sources/{id}`).
-2. `services/sources.py` → `source_repository.py` hides the item at once (it
-   disappears from search and answers) and enqueues a cleanup job.
-3. Worker: `services/ingestion/erasers.py` `DocumentEraser` / `SourceEraser`
-   remove vectors and blobs.
+1. `controllers/sources.py` (`DELETE /api/v1/documents/{id}`, `/sources/{id}`).
+2. `SourceRepository` hides the item at once and enqueues a cleanup job.
+3. Worker: `services/indexing.py` `Eraser` removes vectors and blobs.
 
-Logs: `step=requested … job_id=…`, then `step=job_started` / `job_ended`.
+Logs: `step=requested … job_id=…`, then `job_started` / `job_ended`.
 
----
-
-## Where to look for…
+## Where to look
 
 | Question | File |
 | --- | --- |
-| Which URL maps to which function? | `controllers/router.py`, `controllers/*.py` |
-| What does the API return? | `controllers/schemas/` (mirrored in `frontend/src/api/contracts.ts`) |
-| What business rule applies? | `services/rules/` |
-| Which concrete class is used? | `setup/` (API in `setup/api.py`, worker in `setup/worker.py`) |
-| What is stored and how? | `data/db/models/`, `data/db/repositories/`, `migrations/versions/` |
+| Which URL runs which function? | `controllers/chat.py`, `controllers/sources.py`, `controllers/http.py` |
+| What does the API return? | Response models in `controllers/*.py`, mirrored in `frontend/src/api/contracts.ts` |
+| Which input rule applies? | `services/validation.py`, `services/urls.py` |
+| Which concrete class is used? | `wiring.py` |
+| What is stored? | `data/db.py`, `migrations/versions/` |
+| What does an error code mean? | `utils/errors.py` |
 | Settings and limits | `utils/config.py`, `.env.example` |
-| Why did the agent answer that way? | LangSmith project `LANGSMITH_PROJECT`, run `ask_question` (filter by `turn_id`) |
+| Why did the agent answer that way? | LangSmith run `ask_question`, filtered by `turn_id` |

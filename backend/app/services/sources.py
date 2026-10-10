@@ -1,33 +1,24 @@
-"""Source management use cases; indexing itself happens later in the worker."""
+"""Source management: create sources, upload files, request crawls, delete, and show
+cited evidence. Indexing itself happens later, in the worker."""
 
 from hashlib import sha256
 from uuid import UUID
 
-from app.services.ports.sources import BlobStore, EvidenceReader, SourceStore
-from app.services.rules.knowledge import (
-    DocumentSummary,
-    JobView,
-    Passage,
-    Source,
-    SourceDraft,
-    UploadReceipt,
-)
-from app.services.rules.uploads import (
-    checked_upload,
-    normalized_description,
-    normalized_source_name,
-)
-from app.services.rules.web import checked_start_url
+from app.data.blobs import FilesystemBlobStore
+from app.data.retrieval import RetrievalRepository
+from app.data.sources import SourceRepository
+from app.services.models import DocumentSummary, Identity, JobView, Passage, Source, UploadReceipt
+from app.services.urls import checked_start_url
+from app.services.validation import checked_upload, normalized_description, normalized_source_name
 from app.utils.logging import flow_event
-from app.utils.security import Identity
 
 
 class SourceService:
     def __init__(
         self,
-        store: SourceStore,
-        evidence: EvidenceReader,
-        blobs: BlobStore,
+        store: SourceRepository,
+        evidence: RetrievalRepository,
+        blobs: FilesystemBlobStore,
         *,
         max_upload_bytes: int,
     ):
@@ -40,7 +31,14 @@ class SourceService:
         self, identity: Identity, name: str, description: str, url: str | None = None
     ) -> Source:
         """A URL makes a website source that the worker crawls; otherwise files are uploaded."""
-        source = self._store.create(identity, _draft(name, description, url))
+        kind = "upload" if url is None else "website"
+        source = self._store.create(
+            identity,
+            kind,
+            normalized_source_name(name),
+            normalized_description(description),
+            None if url is None else checked_start_url(url),
+        )
         flow_event("add_source", "created", source_id=source.id, kind=source.kind)
         return source
 
@@ -58,6 +56,8 @@ class SourceService:
     def upload(
         self, identity: Identity, source_id: UUID, filename: str, data: bytes
     ) -> UploadReceipt:
+        """Store the bytes, then record the version and its index job in one transaction.
+        Identical content is a duplicate and keeps no extra blob."""
         spec = checked_upload(filename, len(data), self.max_upload_bytes)
         key = self._blobs.write(data)
         try:
@@ -95,10 +95,3 @@ class SourceService:
         self, identity: Identity, document_id: UUID, version_id: UUID, chunk_id: UUID
     ) -> Passage:
         return self._evidence.passage(identity, document_id, version_id, chunk_id)
-
-
-def _draft(name: str, description: str, url: str | None) -> SourceDraft:
-    name, description = normalized_source_name(name), normalized_description(description)
-    if url is None:
-        return SourceDraft("upload", name, description)
-    return SourceDraft("website", name, description, checked_start_url(url))

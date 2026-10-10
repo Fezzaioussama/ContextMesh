@@ -1,20 +1,16 @@
 import { useCallback, useState } from "react";
 import type { ChangeEvent } from "react";
-import { ApiError } from "../../api/client";
-import type { DocumentSummary, Source } from "../../api/contracts";
 import {
+  ApiError,
   deleteDocument,
   deleteSource,
   syncSource,
   uploadDocument,
-} from "../../api/knowledge";
-import { ExternalLink, webUrl } from "../../components/ExternalLink";
-import { ErrorNotice } from "../../components/Feedback";
-import { Icon } from "../../components/Icon";
+} from "../../api/client";
+import type { DocumentSummary, Source } from "../../api/contracts";
+import { ErrorNotice, ExternalLink, Icon, webUrl } from "../../components/ui";
 import { crawlStatus, documentStatus, isOpen } from "./documentStatus";
-import { useAction } from "./useAction";
-import { useDocuments } from "./useDocuments";
-import { usePolling } from "./usePolling";
+import { useAction, useDocuments, usePolling } from "./hooks";
 
 interface SourceCardProps {
   source: Source;
@@ -57,7 +53,7 @@ export function SourceCard(props: SourceCardProps) {
         <Icon name="library" />
         <div>
           <strong>{props.source.name}</strong>
-          <SourceDescription text={props.source.description} />
+          {props.source.description.length > 0 && <p>{props.source.description}</p>}
         </div>
         <DeleteSource
           name={props.source.name}
@@ -131,11 +127,6 @@ function WebsiteControls(props: { source: Source; settle: () => void }) {
       <ErrorNotice message={crawl.error} retry={crawl.clear} label="Dismiss" />
     </div>
   );
-}
-
-function SourceDescription({ text }: { text: string }) {
-  if (text.length === 0) return null;
-  return <p>{text}</p>;
 }
 
 function DeleteSource(props: {

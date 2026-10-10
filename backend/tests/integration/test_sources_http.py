@@ -3,10 +3,10 @@
 from uuid import UUID, uuid4
 
 import pytest
-from app.data.db.models.user import memberships
-from app.setup.api import create_app
+from app.data.db import memberships
+from app.main import create_app
+from app.services.models import Identity
 from app.utils.config import Settings
-from app.utils.security import Identity
 from fastapi.testclient import TestClient
 from sqlalchemy import update
 from support import ask, create_source, documents, drain, upload

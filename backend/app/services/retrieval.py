@@ -1,20 +1,24 @@
-"""Hybrid retrieval: scoped candidates, canonical hydration, rank fusion, reranking."""
+"""Hybrid retrieval: vector and keyword candidates, fused by rank, hydrated from
+PostgreSQL (which re-checks access), then reranked by query-term coverage."""
 
+import re
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
-from app.services.ports.models import EmbeddingModel
-from app.services.ports.retrieval import (
-    LexicalSearch,
-    PassageStore,
-    Reranker,
-    RetrievalResult,
-    VectorSearch,
+from app.data.qdrant import QdrantVectorIndex
+from app.data.retrieval import RetrievalRepository
+from app.services.models import EmbeddingModel, Evidence, Identity, Passage, RetrievalResult
+from app.utils.errors import VectorIndexUnavailable
+
+RRF_K = 60
+COVERAGE_WEIGHT = 0.3
+WORD = re.compile(r"[a-z0-9]+")
+STOPWORDS = frozenset(
+    "the and for are was were with that this from what which who whom how why when where "
+    "does did has have had not but our your their its into about than then them they you "
+    "can could should would will shall may might must any all some been being also there".split()
 )
-from app.services.rules.errors import VectorIndexUnavailable
-from app.services.rules.knowledge import Evidence, Passage
-from app.services.rules.ranking import query_terms, reciprocal_rank_fusion, term_coverage
-from app.utils.security import Identity
 
 
 @dataclass(frozen=True)
@@ -29,17 +33,13 @@ class HybridRetriever:
     def __init__(
         self,
         embeddings: EmbeddingModel,
-        vectors: VectorSearch,
-        lexical: LexicalSearch,
-        passages: PassageStore,
-        reranker: Reranker,
+        vectors: QdrantVectorIndex,
+        store: RetrievalRepository,
         limits: RetrievalLimits = RetrievalLimits(),
     ):
         self._embeddings = embeddings
         self._vectors = vectors
-        self._lexical = lexical
-        self._passages = passages
-        self._reranker = reranker
+        self._store = store
         self._limits = limits
 
     def search(
@@ -49,72 +49,65 @@ class HybridRetriever:
         queries: tuple[str, ...],
         round_number: int,
     ) -> RetrievalResult:
+        """When the vector index is down, keyword search still answers."""
         if not source_ids or not queries:
             return RetrievalResult((), 0, True)
-        fused, available = self._fused(identity, source_ids, queries)
-        candidates = _strongest(fused, self._limits.hydrated)
-        passages = self._passages.hydrate(identity, source_ids, candidates)
-        ranked = self._reranker.rank(queries, passages, fused)[: self._limits.results]
-        return RetrievalResult(_evidence(ranked, round_number), len(fused), available)
-
-    def _fused(
-        self, identity: Identity, source_ids: tuple[UUID, ...], queries: tuple[str, ...]
-    ) -> tuple[dict[UUID, float], bool]:
-        vector, available = self._vector_rankings(identity.workspace_id, source_ids, queries)
-        lexical = [self._lexical_ranking(identity, source_ids, query) for query in queries]
-        return reciprocal_rank_fusion([*vector, *lexical]), available
-
-    def _lexical_ranking(
-        self, identity: Identity, source_ids: tuple[UUID, ...], query: str
-    ) -> tuple[UUID, ...]:
-        return self._lexical.search(identity, source_ids, query, self._limits.lexical_candidates)
-
-    def _vector_rankings(
-        self, workspace_id: UUID, source_ids: tuple[UUID, ...], queries: tuple[str, ...]
-    ) -> tuple[list[tuple[UUID, ...]], bool]:
+        limits = self._limits
         try:
             vectors = self._embeddings.embed(queries)
             rankings = [
                 self._vectors.search(
-                    vector, workspace_id, source_ids, self._limits.vector_candidates
+                    vector, identity.workspace_id, source_ids, limits.vector_candidates
                 )
                 for vector in vectors
             ]
+            vector_available = True
         except VectorIndexUnavailable:
-            return [], False
-        return rankings, True
+            rankings, vector_available = [], False
+        for query in queries:
+            rankings.append(
+                self._store.search(identity, source_ids, query, limits.lexical_candidates)
+            )
+        fused = reciprocal_rank_fusion(rankings)
+        strongest = sorted(fused, key=lambda item: (-fused[item], str(item)))[: limits.hydrated]
+        passages = self._store.hydrate(identity, source_ids, tuple(strongest))
+        ranked = rerank(queries, passages, fused)[: limits.results]
+        evidence = tuple(Evidence(passage, score, round_number) for passage, score in ranked)
+        return RetrievalResult(evidence, len(fused), vector_available)
 
 
-def _strongest(fused: dict[UUID, float], limit: int) -> tuple[UUID, ...]:
-    ordered = sorted(fused, key=lambda item: (-fused[item], str(item)))
-    return tuple(ordered[:limit])
+def reciprocal_rank_fusion(rankings: Iterable[Sequence[UUID]], k: int = RRF_K) -> dict[UUID, float]:
+    """Combine ranks from independent engines; ranks start at 1 and absent ranks add 0."""
+    scores: dict[UUID, float] = {}
+    for ranking in rankings:
+        for rank, item in enumerate(ranking, start=1):
+            scores[item] = scores.get(item, 0.0) + 1 / (k + rank)
+    return scores
 
 
-def _evidence(ranked: tuple[tuple[Passage, float], ...], round_number: int) -> tuple[Evidence, ...]:
-    return tuple(Evidence(passage, score, round_number) for passage, score in ranked)
-
-
-class TermOverlapReranker:
+def rerank(
+    queries: tuple[str, ...], passages: tuple[Passage, ...], fused: dict[UUID, float]
+) -> tuple[tuple[Passage, float], ...]:
     """Deterministic baseline: blends normalized fused rank with query-term coverage."""
-
-    def __init__(self, coverage_weight: float = 0.3):
-        self._weight = coverage_weight
-
-    def rank(
-        self,
-        queries: tuple[str, ...],
-        passages: tuple[Passage, ...],
-        fused: dict[UUID, float],
-    ) -> tuple[tuple[Passage, float], ...]:
-        terms = query_terms(" ".join(queries))
-        top = max((fused[passage.chunk_id] for passage in passages), default=1.0)
-        scored = [(passage, self._score(passage, terms, fused, top)) for passage in passages]
-        return tuple(sorted(scored, key=lambda item: (-item[1], str(item[0].chunk_id))))
-
-    def _score(
-        self, passage: Passage, terms: frozenset[str], fused: dict[UUID, float], top: float
-    ) -> float:
+    terms = query_terms(" ".join(queries))
+    top = max((fused[passage.chunk_id] for passage in passages), default=1.0)
+    scored = []
+    for passage in passages:
         heading = " ".join(passage.locator.heading_path)
         coverage = term_coverage(terms, f"{passage.title} {heading} {passage.text}")
         rank_signal = fused[passage.chunk_id] / top
-        return round((1 - self._weight) * rank_signal + self._weight * coverage, 6)
+        score = round((1 - COVERAGE_WEIGHT) * rank_signal + COVERAGE_WEIGHT * coverage, 6)
+        scored.append((passage, score))
+    return tuple(sorted(scored, key=lambda item: (-item[1], str(item[0].chunk_id))))
+
+
+def query_terms(text: str) -> frozenset[str]:
+    return frozenset(
+        word for word in WORD.findall(text.casefold()) if len(word) > 2 and word not in STOPWORDS
+    )
+
+
+def term_coverage(terms: frozenset[str], text: str) -> float:
+    if not terms:
+        return 0.0
+    return len(terms & set(WORD.findall(text.casefold()))) / len(terms)

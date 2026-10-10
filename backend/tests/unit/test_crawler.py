@@ -3,11 +3,9 @@
 from uuid import uuid4
 
 import pytest
-from app.services.ingestion.crawler import CrawlPolicy, SiteCrawler
-from app.services.ports.web import FetchedPage
-from app.services.rules.errors import FetchFailure, IngestionFailure
-from app.services.rules.knowledge import ClaimedJob, WebsiteTarget
-from app.utils.parsers.html import HtmlPageReader
+from app.services.crawler import CrawlPolicy, SiteCrawler
+from app.services.models import ClaimedJob, FetchedPage, WebsiteTarget
+from app.utils.errors import FetchFailure, IngestionFailure
 from support import FixtureWeb
 
 START = "https://docs.test/guide/"
@@ -73,7 +71,7 @@ def site(web, pages):
 def crawl(web, policy=CrawlPolicy(), store=None):
     store = store or Store()
     jobs = Jobs()
-    SiteCrawler(jobs, store, web, HtmlPageReader(), Blobs(), policy).handle(job_for(store.target))
+    SiteCrawler(jobs, store, web, Blobs(), policy).handle(job_for(store.target))
     return store, jobs
 
 

@@ -7,15 +7,12 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from app.data.db.repositories.conversation_repository import (
-    ConversationRepository,
-)
-from app.data.db.repositories.turn_repository import TurnRepository
-from app.data.db.repositories.user_repository import DevelopmentIdentityRepository
-from app.setup.api import create_app
-from app.setup.knowledge import ingestion_worker
+from app.data.chat import ChatRepository
+from app.data.db import provision_identity
+from app.main import create_app
+from app.services.models import Identity
 from app.utils.config import Settings
-from app.utils.security import Identity
+from app.wiring import build_worker
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from support import memory_services
@@ -51,13 +48,8 @@ def identity():
 
 @pytest.fixture
 def repository(engine, identity):
-    DevelopmentIdentityRepository(engine).provision(identity)
-    return ConversationRepository(engine)
-
-
-@pytest.fixture
-def turn_repository(engine, repository):
-    return TurnRepository(engine, 90)
+    provision_identity(engine, identity)
+    return ChatRepository(engine, 90)
 
 
 @pytest.fixture
@@ -98,7 +90,7 @@ def client(settings, identity, services):
 
 @pytest.fixture
 def worker(engine, settings, services):
-    return ingestion_worker(engine, settings, services)
+    return build_worker(engine, settings, services)
 
 
 @pytest.fixture

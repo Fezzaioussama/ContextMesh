@@ -1,0 +1,27 @@
+{
+  "mcpServers": {
+    "graphify": {
+      "type": "stdio",
+      "command": "/home/oussama/.local/bin/graphify-mcp",
+      "args": [
+        "/home/oussama/Projects/ContextMesh/graphify-out/graph.json"
+      ],
+      "env": {}
+    },
+    "sentry": {
+      "type": "http",
+      "url": "https://mcp.sentry.dev/mcp"
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@0.0.83",
+        "--browser",
+        "chromium"
+      ],
+      "env": {}
+    }
+  }
+}

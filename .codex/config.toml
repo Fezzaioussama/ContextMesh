@@ -2,3 +2,17 @@
 [agents]
 enabled = true
 max_concurrent_threads_per_session = 3
+
+# graphify knowledge-graph MCP server (query_graph, get_node, get_neighbors, shortest_path, ...)
+[mcp_servers.graphify]
+command = "/home/oussama/.local/bin/graphify-mcp"
+args = ["/home/oussama/Projects/ContextMesh/graphify-out/graph.json"]
+
+# Sentry hosted MCP server (OAuth: run `codex mcp login sentry` once)
+[mcp_servers.sentry]
+url = "https://mcp.sentry.dev/mcp"
+
+# Playwright browser automation MCP server
+[mcp_servers.playwright]
+command = "npx"
+args = ["-y", "@playwright/mcp@0.0.83", "--browser", "chromium"]

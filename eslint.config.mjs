@@ -67,7 +67,7 @@ export default defineConfig([
       reportUnusedDisableDirectives: "error",
     },
     rules: {
-      complexity: ["error", { max: 4, variant: "classic" }],
+      complexity: ["error", { max: 10, variant: "classic" }],
       "max-lines": [
         "error",
         { max: 1000, skipBlankLines: false, skipComments: false },

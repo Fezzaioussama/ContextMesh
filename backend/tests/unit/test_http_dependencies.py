@@ -1,25 +1,20 @@
 """HTTP dependency bindings keep concurrent application instances isolated."""
 
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from threading import Barrier
 from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
-from app.controllers import deps
-from app.controllers.deps import ChatDependencies, HealthDependencies, SourceDependencies
-from app.controllers.errors import install_error_handlers
-from app.controllers.health import health_router
-from app.controllers.router import api_router
-from app.services.agent.policy import AgentPolicy
-from app.services.chat_service import AssistantMetadata, ConversationService
-from app.services.health_service import HealthService
-from app.services.ports.health import DependencyHealth
-from app.services.rules.models import Conversation
+from app.main import compose_app
+from app.services.agent.state import AgentPolicy
+from app.services.chat import AssistantMetadata, ConversationService
+from app.services.models import Conversation, Identity
 from app.services.sources import SourceService
-from app.utils.security import Identity
-from fastapi import FastAPI
+from app.utils.config import Settings
+from app.wiring import Api
 from fastapi.testclient import TestClient
 
 ROOT = "/api/v1/assistant"
@@ -35,23 +30,10 @@ def service_for(name: str) -> Mock:
     return service
 
 
-def client_for(service: ConversationService, identity: Identity, database: DependencyHealth):
-    app = FastAPI()
-    install_error_handlers(app)
-    chat = ChatDependencies(service, identity)
-    health = HealthDependencies(HealthService(database))
-    sources = SourceDependencies(Mock(spec=SourceService, max_upload_bytes=1000))
-    app.dependency_overrides.update(
-        {
-            deps.conversation_service: chat.conversation_service,
-            deps.principal: chat.principal,
-            deps.source_service: sources.source_service,
-            deps.health_service: health.health_service,
-        }
-    )
-    app.include_router(api_router())
-    app.include_router(health_router())
-    return TestClient(app)
+def client_for(service: ConversationService, identity: Identity, database_ready: bool):
+    sources = Mock(spec=SourceService, max_upload_bytes=1000)
+    api = Api(service, sources, Mock(return_value=database_ready), Mock())
+    return TestClient(compose_app(Settings(_env_file=None), identity, api, ExitStack()))
 
 
 @pytest.fixture
@@ -60,11 +42,9 @@ def isolated_apps():
     second_identity = Identity("second-subject", uuid4())
     first_service = service_for("first-model")
     second_service = service_for("second-model")
-    first_database = Mock(spec=DependencyHealth, ready=Mock(return_value=True))
-    second_database = Mock(spec=DependencyHealth, ready=Mock(return_value=False))
     with (
-        client_for(first_service, first_identity, first_database) as first_client,
-        client_for(second_service, second_identity, second_database) as second_client,
+        client_for(first_service, first_identity, True) as first_client,
+        client_for(second_service, second_identity, False) as second_client,
     ):
         yield (
             (first_client, first_service, first_identity),
