@@ -131,3 +131,9 @@ def page_title(url: str) -> str:
     parts = urlsplit(url)
     name = unquote(PurePosixPath(parts.path).name) or parts.hostname or url
     return name[:200]
+
+
+def without_query(url: str) -> str:
+    """For logs: the query string may carry tokens, so only scheme, host, and path."""
+    parts = urlsplit(url)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))

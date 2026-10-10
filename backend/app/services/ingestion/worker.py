@@ -8,7 +8,7 @@ from app.services.ports.ingestion import JobQueue
 from app.services.rules.errors import IngestionFailure, LeaseLost, VectorIndexUnavailable
 from app.services.rules.knowledge import ClaimedJob
 from app.utils.exceptions import ContextMeshError
-from app.utils.logging import flow_event, job_flow
+from app.utils.logging import flow_event, flow_scope, job_flow
 
 logger = logging.getLogger("context_mesh.worker")
 
@@ -41,15 +41,22 @@ class IngestionWorker:
         return True
 
     def _execute(self, job: ClaimedJob) -> None:
-        flow_event(job_flow(job.kind), "job_started", job_id=job.id, attempt=job.attempts)
+        with flow_scope(job_id=job.id):
+            flow_event(job_flow(job.kind), "job_started", attempt=job.attempts)
+            self._run(job)
+
+    def _run(self, job: ClaimedJob) -> None:
+        """`job_ended` follows every run that did not fail; a handler that found nothing
+        to do (deleted or replaced item) logs `job_cancelled` first."""
         try:
             self._handler(job).handle(job)
         except LeaseLost:
             logger.warning("Lost job lease; job_id=%s", job.id)
+            flow_event(job_flow(job.kind), "lease_lost")
         except Exception as error:
             self._record(job, error)
         else:
-            flow_event(job_flow(job.kind), "job_finished", job_id=job.id)
+            flow_event(job_flow(job.kind), "job_ended")
 
     def _handler(self, job: ClaimedJob) -> JobHandler:
         handler = self._handlers.get(job.kind)
@@ -60,5 +67,5 @@ class IngestionWorker:
     def _record(self, job: ClaimedJob, error: Exception) -> None:
         code, retryable = failure_details(error)
         logger.warning("Job failed; job_id=%s code=%s error=%s", job.id, code, type(error).__name__)
-        flow_event(job_flow(job.kind), "job_failed", job_id=job.id, code=code, retry=retryable)
+        flow_event(job_flow(job.kind), "job_failed", code=code, retry=retryable)
         self._jobs.fail(job, code, retryable)

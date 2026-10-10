@@ -53,13 +53,17 @@ The backend (`backend/app`) is organized as `controllers -> services -> data`:
   services only.
 - `services/` hold the use cases, one area per user story. They own their
   interfaces in `services/ports/` and must not import `data`, `controllers`, or
-  `setup`. `services/rules/` holds pure business rules and imports only the
-  standard library, other rules, and `utils.exceptions`/`utils.security`.
-  LangGraph is used only in `services/agent/graph.py`, which sequences agent steps.
+  `setup`; from `utils` they import only `exceptions`, `security`, and `logging`.
+  `services/rules/` holds pure business rules and imports only the standard
+  library, other rules, and `utils.exceptions`/`utils.security`. The one framework
+  in `services` is LangGraph, confined to `services/agent/graph.py`, which only
+  sequences agent steps.
 - `data/` implements the ports: PostgreSQL (`db`), Qdrant (`vectors`), blobs,
   model clients (`llm`), and the guarded web fetcher (`web`).
-- `utils/` (config, errors, security, logging, parsers) may be used by every
-  layer and imports nothing from `controllers`, `data`, or `setup`.
+- `utils/` imports nothing from `controllers`, `data`, or `setup`. Its
+  `exceptions`, `security`, and `logging` modules may be used by every layer;
+  `config` and the concrete `parsers` (PDF, Office, HTML libraries) are imported
+  only by `setup`, `migrations`, tests, and each other.
 - `setup/` is the only place that chooses concrete classes for the API and worker.
 
 Every user-story step logs a `flow_event` (`app/utils/logging.py`) with ids and

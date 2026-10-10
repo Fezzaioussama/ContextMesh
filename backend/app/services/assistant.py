@@ -10,7 +10,7 @@ from app.services.rules.knowledge import CatalogSource
 from app.services.rules.models import AgentOutcome, Execution, TurnInput, TurnResult
 from app.services.rules.validation import checked_key, checked_source_filter, normalized_message
 from app.utils.exceptions import ContextMeshError
-from app.utils.logging import flow_event
+from app.utils.logging import flow_event, flow_scope
 from app.utils.security import Identity
 
 
@@ -39,44 +39,66 @@ class Assistant:
         message: str,
         source_ids: tuple[UUID, ...] | None = None,
     ) -> TurnResult:
-        turn = TurnInput(normalized_message(message), checked_source_filter(source_ids))
-        checked_key(key)
-        saved = self._store.replay(identity, conversation_id, key, turn)
-        if saved is not None:
-            flow_event("ask_question", "replayed", conversation_id=conversation_id)
-            return saved
-        catalog = self._catalog.eligible(identity, turn.source_ids)
-        claimed = self._store.claim(identity, conversation_id, key, turn)
-        if isinstance(claimed, TurnResult):
-            return claimed
-        return self._execute(identity, claimed, catalog)
+        with flow_scope(conversation_id=conversation_id):
+            prepared = self._prepared(identity, conversation_id, key, message, source_ids)
+            if isinstance(prepared, TurnResult):
+                return prepared
+            return self._execute(identity, *prepared)
+
+    def _prepared(
+        self,
+        identity: Identity,
+        conversation_id: UUID,
+        key: str,
+        message: str,
+        source_ids: tuple[UUID, ...] | None,
+    ) -> TurnResult | tuple[Execution, tuple[CatalogSource, ...]]:
+        """Validate, replay, check scope, and claim; refusals here log `rejected`."""
+        try:
+            turn = TurnInput(normalized_message(message), checked_source_filter(source_ids))
+            checked_key(key)
+            saved = self._store.replay(identity, conversation_id, key, turn)
+            if saved is not None:
+                flow_event("ask_question", "replayed")
+                return saved
+            catalog = self._catalog.eligible(identity, turn.source_ids)
+            claimed = self._store.claim(identity, conversation_id, key, turn)
+        except ContextMeshError as error:
+            flow_event("ask_question", "rejected", code=error.code)
+            raise
+        return claimed if isinstance(claimed, TurnResult) else (claimed, catalog)
 
     def _execute(
         self, identity: Identity, execution: Execution, catalog: tuple[CatalogSource, ...]
     ) -> TurnResult:
-        flow_event("ask_question", "turn_started", turn_id=execution.turn_id)
+        with flow_scope(turn_id=execution.turn_id):
+            flow_event("ask_question", "turn_started")
+            result, outcome = self._completed(identity, execution, catalog)
+            flow_event(
+                "ask_question",
+                "answered",
+                status=outcome.answer.status,
+                citations=len(outcome.answer.citations),
+                tokens=outcome.usage.total,
+            )
+            return result
+
+    def _completed(
+        self, identity: Identity, execution: Execution, catalog: tuple[CatalogSource, ...]
+    ) -> tuple[TurnResult, AgentOutcome]:
         try:
             outcome = self._answer(identity, execution, catalog)
-            result = self._store.complete(identity, execution, outcome)
+            return self._store.complete(identity, execution, outcome), outcome
         except ContextMeshError as error:
             self._failed(identity, execution, error.code)
             raise
         except Exception:
             self._failed(identity, execution, "internal_error")
             raise
-        flow_event(
-            "ask_question",
-            "answered",
-            turn_id=execution.turn_id,
-            status=outcome.answer.status,
-            citations=len(outcome.answer.citations),
-            tokens=outcome.usage.total,
-        )
-        return result
 
     def _failed(self, identity: Identity, execution: Execution, code: str) -> None:
         self._store.fail(identity, execution, code)
-        flow_event("ask_question", "failed", turn_id=execution.turn_id, code=code)
+        flow_event("ask_question", "failed", code=code)
 
     def _answer(
         self, identity: Identity, execution: Execution, catalog: tuple[CatalogSource, ...]

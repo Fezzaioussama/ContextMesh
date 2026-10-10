@@ -11,7 +11,7 @@ from app.services.ports.web import CrawlStore, FetchedPage, PageReader, PageSumm
 from app.services.rules.errors import FetchFailure, IngestionFailure
 from app.services.rules.knowledge import ClaimedJob, WebsiteTarget
 from app.services.rules.uploads import UploadSpec
-from app.services.rules.web import CrawlScope, crawl_scope, page_title
+from app.services.rules.web import CrawlScope, crawl_scope, page_title, without_query
 from app.utils.logging import flow_event
 
 USER_AGENT = "ContextMeshBot/0.3"
@@ -154,14 +154,14 @@ class SiteCrawler:
         target = self._store.website(job)
         if target is None:
             self._jobs.cancel(job, "obsolete")
+            flow_event("crawl_website", "job_cancelled", code="obsolete")
             return
         run = self._crawl(job, target)
         if not run.progress.seen:
             raise IngestionFailure("no_pages")
         covered = run.covered()
         self._store.finish(job, target, frozenset(run.progress.seen), covered)
-        pages = len(run.progress.seen)
-        flow_event("crawl_website", "crawled", job_id=job.id, pages=pages, complete=bool(covered))
+        flow_event("crawl_website", "crawled", pages=len(run.progress.seen), complete=bool(covered))
 
     def _crawl(self, job: ClaimedJob, target: WebsiteTarget) -> CrawlRun:
         robots = RobotsRules(self._fetcher)
@@ -200,7 +200,7 @@ class SiteCrawler:
             return self._fetcher.fetch(url)
         except FetchFailure as failure:
             progress.skipped(failure)
-            flow_event("crawl_website", "page_skipped", url=url, code=failure.code)
+            flow_event("crawl_website", "page_skipped", url=without_query(url), code=failure.code)
             return None
 
     def _accept(self, run: CrawlRun, page: FetchedPage, depth: int) -> None:
@@ -215,11 +215,17 @@ class SiteCrawler:
         spec = UploadSpec(
             _title(summary, page), page.url, page.media_type, len(page.content), page.url
         )
-        key = self._blobs.write(page.content)
-        digest = sha256(page.content).hexdigest()
-        if not self._store.register_page(run.job, run.target, spec, digest, key):
+        step = "page_recorded" if self._stored(run, spec, page.content) else "page_unchanged"
+        flow_event("crawl_website", step, url=without_query(page.url))
+
+    def _stored(self, run: CrawlRun, spec: UploadSpec, content: bytes) -> bool:
+        """True when a new version was recorded; unchanged content keeps no extra blob."""
+        key = self._blobs.write(content)
+        digest = sha256(content).hexdigest()
+        recorded = self._store.register_page(run.job, run.target, spec, digest, key)
+        if not recorded:
             self._blobs.delete(key)
-        flow_event("crawl_website", "page_recorded", job_id=run.job.id, url=page.url)
+        return recorded
 
 
 def _title(summary: PageSummary, page: FetchedPage) -> str:

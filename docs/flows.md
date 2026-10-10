@@ -10,12 +10,15 @@ text, questions or answers):
 2026-10-07 22:41:03 context_mesh.flow flow=upload_document step=accepted document_id=… job_id=… duplicate=False
 ```
 
-To follow one story, filter by its name, or by a `job_id` / `turn_id` to follow a
-single run:
+To follow one story, filter by its name. To follow a single run, filter by its id:
+every line written during a worker job carries its `job_id`, and every line of a
+question carries its `conversation_id` (and `turn_id` once the turn has started),
+even when several runs overlap:
 
 ```bash
 docker compose logs -f api worker | grep "flow=crawl_website"
 docker compose logs api worker | grep "job_id=<id>"
+docker compose logs api | grep "turn_id=<id>"
 ```
 
 Every request has three layers: **controllers** (HTTP in and out) → **services**
@@ -77,9 +80,11 @@ Log: `step=accepted document_id=… job_id=… duplicate=…`.
      generation visible, unless the document was deleted, replaced, or the lease
      was lost.
 
-Logs: `step=job_started job_id=… attempt=1`, then `step=job_finished` or
-`step=job_failed code=… retry=True|False`. Failure codes appear in the UI (for
-example `ocr_required` for scanned PDFs).
+Logs: `step=job_started job_id=… attempt=1`, then `step=job_ended` or
+`step=job_failed code=… retry=True|False` (`lease_lost` if another worker took the
+job over). `step=job_cancelled code=obsolete` before `job_ended` means the document
+was deleted or replaced meanwhile, so nothing was indexed. Failure codes appear in
+the UI (for example `ocr_required` for scanned PDFs).
 
 ## `crawl_website`: crawl a website source
 
@@ -108,9 +113,11 @@ Log: `step=requested source_id=… job_id=…`.
      crawl, only within the part of the site it covered. A partial crawl ends with
      stage `crawled_partial` and removes nothing.
 
-Logs: `step=job_started`, one `step=page_recorded url=…` or
-`step=page_skipped url=… code=…` per page, `step=crawled pages=… complete=…`,
-then `step=job_finished` (or `job_failed`, e.g. `code=robots_disallowed`).
+Logs (all with the crawl's `job_id`): `step=job_started`, then per page
+`step=page_recorded url=…` (new content), `step=page_unchanged url=…`, or
+`step=page_skipped url=… code=…`; then `step=crawled pages=… complete=…` and
+`step=job_ended` (or `job_failed`, e.g. `code=robots_disallowed`). Page URLs are
+logged without their query string, which may carry tokens.
 
 ## `ask_question`: ask a question and get a cited answer
 
@@ -131,10 +138,13 @@ then `step=job_finished` (or `job_failed`, e.g. `code=robots_disallowed`).
    (`release.py`). Limits (rounds, tokens, deadline) are in `policy.py`; model
    calls go through `data/llm/openai.py`.
 
-Logs: `step=turn_started turn_id=…`, one `step=agent_plan`, `agent_retrieve`,
+Logs (all with `conversation_id`, and `turn_id` from `turn_started` on):
+`step=turn_started`, one `step=agent_plan`, `agent_retrieve`,
 `agent_assess`, `agent_generate`, `agent_verify`, `agent_repair` per graph step,
-then `step=answered turn_id=… status=… citations=… tokens=…` or
-`step=failed turn_id=… code=…`. A replay logs `step=replayed`.
+then `step=answered status=… citations=… tokens=…` or `step=failed code=…`.
+A replay logs `step=replayed`. A question refused before a turn starts (unknown
+source filter, a turn already in progress, a reused key with another message)
+logs only `step=rejected code=…`.
 
 ## `delete_document` / `delete_source`
 
@@ -145,7 +155,7 @@ then `step=answered turn_id=… status=… citations=… tokens=…` or
 3. Worker: `services/ingestion/erasers.py` `DocumentEraser` / `SourceEraser`
    remove vectors and blobs.
 
-Logs: `step=requested … job_id=…`, then `step=job_started` / `job_finished`.
+Logs: `step=requested … job_id=…`, then `step=job_started` / `job_ended`.
 
 ---
 

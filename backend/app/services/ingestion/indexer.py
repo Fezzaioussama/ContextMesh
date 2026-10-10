@@ -16,6 +16,7 @@ from app.services.ports.sources import BlobStore
 from app.services.rules.chunking import ChunkingPolicy, chunk_elements
 from app.services.rules.errors import IngestionFailure, VectorIndexUnavailable
 from app.services.rules.knowledge import ChunkDraft, ClaimedJob, IndexTarget
+from app.utils.logging import flow_event, job_flow
 
 PARSER_REVISION = "parser-v2"
 logger = logging.getLogger("context_mesh.worker")
@@ -51,11 +52,15 @@ class DocumentIndexer:
         target = self._store.target(job)
         if target is None:
             self._jobs.cancel(job, "obsolete")
+            flow_event(job_flow(job.kind), "job_cancelled", code="obsolete")
             return
         chunks = self._chunks(job, target)
         generation_id = self._store.stage(job, target, self.signature, chunks)
         self._index(job, target, generation_id, chunks)
-        self._discard(self._store.publish(job, target, generation_id))
+        discarded = self._store.publish(job, target, generation_id)
+        if discarded == generation_id:  # Deleted or replaced while indexing: not published.
+            flow_event(job_flow(job.kind), "job_cancelled", code="obsolete")
+        self._discard(discarded)
 
     def _chunks(self, job: ClaimedJob, target: IndexTarget) -> tuple[ChunkDraft, ...]:
         self._jobs.heartbeat(job, "parsing")

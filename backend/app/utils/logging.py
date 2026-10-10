@@ -5,9 +5,13 @@ API and worker logs, e.g. `grep "flow=crawl_website"`. docs/flows.md lists every
 """
 
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 http_logger = logging.getLogger("context_mesh.http")
 flow_logger = logging.getLogger("context_mesh.flow")
+_scope: ContextVar[dict[str, object]] = ContextVar("flow_scope", default={})
 
 # Which user story each durable job belongs to.
 JOB_FLOWS = {
@@ -20,9 +24,20 @@ JOB_FLOWS = {
 
 def flow_event(flow: str, step: str, **ids: object) -> None:
     """Log `flow=<story> step=<step> key=value…`: identifiers and counts only, never
-    document text, questions, or answers."""
-    details = "".join(f" {name}={value}" for name, value in ids.items())
+    document text, questions, or answers. Ids from enclosing `flow_scope`s come first."""
+    details = "".join(f" {name}={value}" for name, value in {**_scope.get(), **ids}.items())
     flow_logger.info("flow=%s step=%s%s", flow, step, details)
+
+
+@contextmanager
+def flow_scope(**ids: object) -> Iterator[None]:
+    """Add ids (e.g. `turn_id`, `job_id`) to every flow line logged inside the block,
+    so one run can be followed with `grep "turn_id=<id>"` even when runs overlap."""
+    token = _scope.set({**_scope.get(), **ids})
+    try:
+        yield
+    finally:
+        _scope.reset(token)
 
 
 def job_flow(kind: str) -> str:
