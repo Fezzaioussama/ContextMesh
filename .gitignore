@@ -51,6 +51,11 @@ coverage/
 *.tsbuildinfo
 .eslintcache
 .next/
+.github
+.claude
+.codex
+.aws
+.agents
 
 # Shared tool caches
 .cache/
