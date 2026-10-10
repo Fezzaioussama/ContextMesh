@@ -55,8 +55,8 @@ def test_an_upload_is_followed_from_acceptance_to_the_end_of_its_job(answered):
 def test_every_line_of_a_question_carries_its_turn(answered):
     asked = lines_of(answered, "ask_question")
     turns = {re.search(r"turn_id=(\S+)", line).group(1) for line in asked}
-    expected = (["turn_started", "agent_plan"], "answered", 1)
-    assert (steps(asked, "ask_question")[:2], steps(asked, "ask_question")[-1], len(turns)) == (
+    expected = (["turn_started", "agent_route", "agent_plan"], "answered", 1)
+    assert (steps(asked, "ask_question")[:3], steps(asked, "ask_question")[-1], len(turns)) == (
         expected
     )
 

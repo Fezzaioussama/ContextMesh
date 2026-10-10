@@ -1,5 +1,7 @@
 """Bounded agent behavior through the real LangGraph adapter with scripted models."""
 
+import logging
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -19,8 +21,9 @@ from app.services.ports.retrieval import RetrievalResult
 from app.services.rules.answers import UNSPECIFIED_GAP, Locator
 from app.services.rules.errors import provider_unavailable
 from app.services.rules.knowledge import CatalogSource, Evidence, Passage
-from app.services.rules.models import Usage
+from app.services.rules.models import Message, Usage
 from app.utils.exceptions import ContextMeshError
+from app.utils.logging import flow_logger
 from app.utils.security import Identity
 from support import ScriptedReasoning
 
@@ -398,6 +401,73 @@ def test_retrieval_route_without_searchable_sources_reports_an_evidence_gap():
         "insufficient_evidence",
         ["route", "release"],
         4,
+    )
+
+
+def message(role, content):
+    return Message(uuid4(), uuid4(), role, content, datetime.now(UTC))
+
+
+def test_route_sees_indexed_topics_and_only_recent_user_requests():
+    indexed, empty = source("System design primer"), source("Drafts", documents=0)
+    history = (
+        message("user", "first"),
+        message("assistant", "A direct reply that must not bias routing."),
+        message("user", "second"),
+        message("user", "third"),
+        message("user", "fourth"),
+    )
+    decisions = ScriptedDecision("retrieve")
+    run(
+        ScriptedReasoning(),
+        SourceRetriever({}),
+        (indexed, empty),
+        policy=AgentPolicy(route_history_requests=3),
+        history=history,
+        decisions=decisions,
+        question="Explain the design patterns",
+    )
+    assert dict(decisions.tasks[0].state) == {
+        "request": "Explain the design patterns",
+        "earlier_requests": ["second", "third", "fourth"],
+        "sources": [
+            {"name": "System design primer", "description": "System design primer documents"}
+        ],
+    }
+
+
+class FlowLines(logging.Handler):
+    def __init__(self):
+        super().__init__(logging.INFO)
+        self.lines: list[str] = []
+
+    def emit(self, record):
+        self.lines.append(record.getMessage())
+
+
+@pytest.fixture
+def flow_lines():
+    collector = FlowLines()
+    flow_logger.addHandler(collector)
+    flow_logger.setLevel(logging.INFO)
+    yield collector.lines
+    flow_logger.removeHandler(collector)
+
+
+def test_route_decision_is_traced_and_logged_without_content(flow_lines):
+    reasoning = ScriptedReasoning()
+    reasoning.script["direct_answer"] = lambda content: {"answer": "Hi!"}
+    outcome = run(
+        reasoning,
+        SourceRetriever({}),
+        (),
+        decisions=ScriptedDecision("direct", 0.93),
+        question="Hi there",
+    )
+    decided = "flow=ask_question step=route_decided route=direct p_direct=0.93 confidence=0.93"
+    assert (outcome.trace[0].summary.endswith("(p(direct)=0.93)"), decided in flow_lines) == (
+        True,
+        True,
     )
 
 

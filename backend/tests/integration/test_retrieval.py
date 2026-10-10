@@ -66,7 +66,7 @@ def test_vector_outage_falls_back_to_keyword_search(
 
     monkeypatch.setattr(services.vectors, "search", unavailable)
     body = ask(client, conversation_id, "rotation schedule").json()
-    retrieve = body["trace"][1]
+    retrieve = next(stage for stage in body["trace"] if stage["stage"] == "retrieve")
     snippet = body["assistant_message"]["answer"]["citations"][0]["snippet"]
     assert (retrieve["stage"], "only keyword search ran" in retrieve["summary"], snippet) == (
         "retrieve",

@@ -131,7 +131,11 @@ logged without their query string, which may carry tokens.
    - otherwise the turn is claimed (`claim`), the agent runs, and the answer with
      any citations is saved (`complete`).
 3. The agent (`services/agent/graph.py`, steps in `services/agent/steps.py`):
-   **route** (`router.py`, Jev typed decision) chooses one of two bounded paths:
+   **route** (`router.py`, Jev typed decision) chooses one of two bounded paths.
+   Jev sees the request, the user's last `route_history_requests` messages (never
+   assistant replies, which would bias it toward repeating the previous route), and
+   the names and descriptions of searchable sources, so general-looking questions
+   about an indexed topic still retrieve:
    - Questions that need indexed, current, private, or source-specific facts use
      **plan** (`planner.py`) → **retrieve** (`gather.py`, hybrid search in
      `services/retrieval.py`: PostgreSQL full text + Qdrant, fused and reranked) →
@@ -145,8 +149,10 @@ logged without their query string, which may carry tokens.
    `data/llm/openai.py`, and typed routing goes through `data/llm/decisions.py`.
 
 Logs (all with `conversation_id`, and `turn_id` from `turn_started` on):
-`step=turn_started`, then `step=agent_route`; a grounded path logs `agent_plan`, `agent_retrieve`,
-`agent_assess`, `agent_generate`, `agent_verify`, `agent_repair` per graph step,
+`step=turn_started`, then `step=agent_route` and, when Jev answered,
+`step=route_decided route=… p_direct=… confidence=…`; a grounded path logs
+`agent_plan`, `agent_retrieve`, `agent_assess`, `agent_generate`, `agent_verify`,
+`agent_repair` per graph step,
 while a direct path logs `agent_direct`. Both end with
 `step=answered status=… citations=… tokens=…` or `step=failed code=…`.
 A replay logs `step=replayed`. A question refused before a turn starts (unknown

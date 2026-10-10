@@ -79,8 +79,9 @@ deadline (twice `CONTEXTMESH_WEB_TIMEOUT_SECONDS`, redirects included).
 ## Querying
 
 The agent is a bounded LangGraph state machine whose nodes are application
-services. An optional Jev decision step first routes self-contained conversation
-to **direct answer → release**; source-specific, private, current, and uncertain
+services. An optional Jev decision step, given the searchable source names and the
+user's recent requests, first routes self-contained conversation to
+**direct answer → release**; source-specific, private, current, and uncertain
 questions use **plan → retrieve → assess ⟲ expand → answer → verify ⟲ repair
 → release**. Direct answers are explicitly citation-free. Classifier failures and
 low-confidence choices conservatively take the retrieval path. Server policy

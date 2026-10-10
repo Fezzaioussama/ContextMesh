@@ -1,12 +1,13 @@
 """Typed, conservative routing before the grounded retrieval workflow."""
 
 from app.services.agent.budget import BudgetedModel
-from app.services.agent.context import conversation_payload
+from app.services.agent.context import request_payload, topics_payload
 from app.services.agent.instructions import ROUTE
 from app.services.agent.policy import AgentPolicy
 from app.services.agent.state import AgentState
 from app.services.ports.decisions import ChoiceReply, ChoiceTask, DecisionModel
 from app.utils.exceptions import ContextMeshError
+from app.utils.logging import flow_event
 
 CRITERIA = {
     "direct": (
@@ -45,10 +46,15 @@ class DecisionRouter:
     def _task(self, state: AgentState) -> ChoiceTask:
         remaining = self._model.require_time(state)
         timeout = min(self._policy.call_timeout_seconds, remaining)
-        context = conversation_payload(state.history, self._policy.history_messages)
         return ChoiceTask(
             "retrieval_route",
-            {"question": state.request, "conversation": context},
+            {
+                "request": state.request,
+                "earlier_requests": request_payload(
+                    state.history, self._policy.route_history_requests
+                ),
+                "sources": topics_payload(state.searchable),
+            },
             ROUTE,
             CRITERIA,
             timeout,
@@ -56,7 +62,15 @@ class DecisionRouter:
 
     def _apply(self, state: AgentState, reply: ChoiceReply) -> AgentState:
         routed = "direct" if self._confident_direct(reply) else "retrieve"
-        summary = _summary(routed, reply.choice)
+        direct = reply.probabilities.get("direct", 0.0)
+        flow_event(
+            "ask_question",
+            "route_decided",
+            route=routed,
+            p_direct=f"{direct:.2f}",
+            confidence=f"{reply.confidence:.2f}",
+        )
+        summary = f"{_summary(routed, reply.choice)} (p(direct)={direct:.2f})"
         return state.charged(reply.usage).traced("route", summary, route=routed)
 
     def _confident_direct(self, reply: ChoiceReply) -> bool:

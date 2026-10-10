@@ -21,3 +21,4 @@ class AgentPolicy:
     max_claims: int = 10
     max_gaps: int = 5
     history_messages: int = 6
+    route_history_requests: int = 3

@@ -65,12 +65,14 @@ CONTEXTMESH_DECISION_MODEL=typesafe/jev-1.13
 CONTEXTMESH_MAX_OUTPUT_TOKENS=8192
 ```
 
-With decision routing enabled, Jev classifies each turn before retrieval. Questions
-that need indexed, current, private, or source-specific facts continue through the
-grounded RAG workflow; greetings, rewriting, creative work, and other self-contained
-requests go directly to the chat model without searching sources. Unavailable or
-low-confidence decisions conservatively fall back to retrieval. Jev uses the
-server-side `OPENROUTER_API_KEY`, even when the main chat provider is OpenAI.
+With decision routing enabled, Jev classifies each turn before retrieval, seeing
+the names and descriptions of your indexed sources. Questions that need indexed,
+current, private, or source-specific facts, or whose topic an indexed source covers,
+continue through the grounded RAG workflow; greetings, rewriting, creative work,
+and other self-contained requests go directly to the chat model without searching
+sources. Unavailable or low-confidence decisions conservatively fall back to
+retrieval. Jev uses the server-side `OPENROUTER_API_KEY`, even when the main chat
+provider is OpenAI.
 
 Reasoning models (for example DeepSeek) spend hidden reasoning tokens inside the
 output budget — measured at up to several thousand per agent step — so keep

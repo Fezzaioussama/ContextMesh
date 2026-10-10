@@ -65,6 +65,16 @@ def conversation_payload(history: tuple[Message, ...], limit: int) -> list[dict[
     ]
 
 
+def request_payload(history: tuple[Message, ...], limit: int) -> list[str]:
+    """Only the user's own earlier requests: assistant replies bias a route classifier."""
+    requests = [message.content[:1500] for message in history if message.role == "user"]
+    return requests[max(len(requests) - limit, 0) :]
+
+
+def topics_payload(sources: tuple[CatalogSource, ...]) -> list[dict[str, str]]:
+    return [{"name": source.name, "description": source.description} for source in sources]
+
+
 def catalog_payload(sources: tuple[CatalogSource, ...]) -> list[dict[str, object]]:
     return [
         {

@@ -69,8 +69,9 @@ def test_answer_cites_canonical_evidence_that_resolves(client, conversation_id, 
         ["Authentication ADR", "Decision"],
     )
     assert client.get(citation["evidence_path"]).json()["text"] == DECISION
-    assert (body["trace"][0]["stage"], history(client, conversation_id)[-1]["trace"]) == (
-        "plan",
+    stages = [stage["stage"] for stage in body["trace"]]
+    assert (stages[:2], history(client, conversation_id)[-1]["trace"]) == (
+        ["route", "plan"],
         body["trace"],
     )
 
