@@ -79,7 +79,7 @@ deadline (twice `CONTEXTMESH_WEB_TIMEOUT_SECONDS`, redirects included).
 ## Querying
 
 The agent is a bounded LangGraph state machine whose nodes are application
-services. An optional Jev decision step, given the searchable source names and the
+services, grouped into `routing`, `research`, and `answering` subgraphs. An optional Jev decision step, given the searchable source names and the
 user's recent requests, first routes self-contained conversation to
 **direct answer → release**; source-specific, private, current, and uncertain
 questions use **plan → retrieve → assess ⟲ expand → answer → verify ⟲ repair
@@ -92,6 +92,11 @@ schema-checked; unknown source or passage IDs are dropped. Only hydrated passage
 from live, published generations reach a model, and retrieved text is treated as
 untrusted data. Vector search failures fall back to keyword search; model failures
 are reported as failures, never as missing evidence.
+
+Setting `LANGSMITH_TRACING=true` (with `LANGSMITH_API_KEY`) traces every turn in
+LangSmith: one `ask_question` run per turn, with each subgraph, node, model call,
+and retrieval nested under it. Traces carry full prompts, passages, and answers,
+so tracing is off by default and startup fails if it is on without a key.
 
 Answers are persisted with canonical citations (document version, generation,
 chunk, heading path, and line range). History and idempotent replay withhold an

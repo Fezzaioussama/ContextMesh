@@ -130,8 +130,10 @@ logged without their query string, which may carry tokens.
      (`data/db/repositories/turn_repository.py` `replay`);
    - otherwise the turn is claimed (`claim`), the agent runs, and the answer with
      any citations is saved (`complete`).
-3. The agent (`services/agent/graph.py`, steps in `services/agent/steps.py`):
-   **route** (`router.py`, Jev typed decision) chooses one of two bounded paths.
+3. The agent (`services/agent/graph.py`, steps in `services/agent/steps.py`) is
+   one LangGraph run of three subgraphs: `routing` (route, direct), `research`
+   (plan, retrieve, assess), and `answering` (generate, verify, repair), then
+   **release**. **route** (`router.py`, Jev typed decision) chooses one of two bounded paths.
    Jev sees the request, the user's last `route_history_requests` messages (never
    assistant replies, which would bias it toward repeating the previous route), and
    the names and descriptions of searchable sources, so general-looking questions
@@ -147,6 +149,12 @@ logged without their query string, which may carry tokens.
    Low-confidence or unavailable routing falls back to retrieval. Limits (rounds,
    tokens, deadline) are in `policy.py`; generative calls go through
    `data/llm/openai.py`, and typed routing goes through `data/llm/decisions.py`.
+4. Optional tracing: with `LANGSMITH_TRACING=true`, `setup/tracing.py` wraps the
+   agent's model, decision, embedding, and search ports (`data/tracing/models.py`,
+   `data/tracing/retrieval.py`), and `data/tracing/scope.py` sends the turn to
+   LangSmith as one `ask_question` run tagged with `conversation_id`, `turn_id`,
+   and `workspace_id`. Each phase, node, model call (`llm`), and `hybrid_search`
+   (`retriever`) nests under it, with full content. The ingestion worker is not traced.
 
 Logs (all with `conversation_id`, and `turn_id` from `turn_started` on):
 `step=turn_started`, then `step=agent_route` and, when Jev answered,
@@ -182,3 +190,4 @@ Logs: `step=requested … job_id=…`, then `step=job_started` / `job_ended`.
 | Which concrete class is used? | `setup/` (API in `setup/api.py`, worker in `setup/worker.py`) |
 | What is stored and how? | `data/db/models/`, `data/db/repositories/`, `migrations/versions/` |
 | Settings and limits | `utils/config.py`, `.env.example` |
+| Why did the agent answer that way? | LangSmith project `LANGSMITH_PROJECT`, run `ask_question` (filter by `turn_id`) |

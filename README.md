@@ -184,6 +184,7 @@ flowchart LR
 | UI | React, TypeScript, Vite |
 | API and use cases | Python, FastAPI |
 | Agent orchestration | LangGraph |
+| Agent tracing (opt-in) | LangSmith |
 | Metadata, authorization, chat, jobs | PostgreSQL, SQLAlchemy, Alembic |
 | Vector retrieval | Qdrant |
 | Keyword retrieval | PostgreSQL full-text search |

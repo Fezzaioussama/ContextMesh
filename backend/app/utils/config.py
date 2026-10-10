@@ -29,6 +29,14 @@ class DecisionProviderSettings:
     endpoint: str
 
 
+@dataclass(frozen=True)
+class TracingSettings:
+    enabled: bool
+    api_key: SecretStr
+    project: str
+    endpoint: str
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=BACKEND.parent / ".env", extra="ignore", populate_by_name=True
@@ -65,6 +73,16 @@ class Settings(BaseSettings):
     decision_endpoint: str = Field(
         default="https://openrouter.ai/api/alpha/decisions",
         validation_alias="CONTEXTMESH_DECISION_ENDPOINT",
+    )
+    langsmith_tracing: bool = Field(default=False, validation_alias="LANGSMITH_TRACING")
+    langsmith_api_key: SecretStr = Field(
+        default=SecretStr(""), validation_alias="LANGSMITH_API_KEY"
+    )
+    langsmith_project: str = Field(
+        default="contextmesh", min_length=1, validation_alias="LANGSMITH_PROJECT"
+    )
+    langsmith_endpoint: str = Field(
+        default="https://api.smith.langchain.com", validation_alias="LANGSMITH_ENDPOINT"
     )
     qdrant_url: str = Field(
         default="http://127.0.0.1:6333", validation_alias="CONTEXTMESH_QDRANT_URL"
@@ -141,6 +159,16 @@ class Settings(BaseSettings):
             self.decision_endpoint,
         )
 
+    @property
+    def selected_tracing(self) -> TracingSettings:
+        """LangSmith receives prompts, passages, and answers, so it is strictly opt-in."""
+        return TracingSettings(
+            self.langsmith_tracing,
+            self.langsmith_api_key,
+            self.langsmith_project,
+            self.langsmith_endpoint,
+        )
+
     @field_validator("database_url")
     @classmethod
     def postgres_only(cls, value: str) -> str:
@@ -162,6 +190,12 @@ class Settings(BaseSettings):
         if not value.strip():
             raise ValueError("Development subject must be nonempty.")
         return value.strip()
+
+    @model_validator(mode="after")
+    def validated_tracing(self):
+        if self.langsmith_tracing and not self.langsmith_api_key.get_secret_value().strip():
+            raise ValueError("LANGSMITH_TRACING=true requires LANGSMITH_API_KEY.")
+        return self
 
     @model_validator(mode="after")
     def validated_turn_lease(self):

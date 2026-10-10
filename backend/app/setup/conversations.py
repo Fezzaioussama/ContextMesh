@@ -1,4 +1,4 @@
-"""Wire the grounded conversation module: retrieval, agent steps, and LangGraph."""
+"""Wire the grounded conversation module: retrieval, agent steps, LangGraph, LangSmith."""
 
 import time
 
@@ -22,8 +22,10 @@ from app.services.agent.steps import AgentSteps
 from app.services.agent.writer import AnswerWriter
 from app.services.assistant import Assistant
 from app.services.chat_service import ConversationService
+from app.services.ports.tracing import RunTracing
 from app.services.retrieval import HybridRetriever, TermOverlapReranker
 from app.setup.services import ExternalServices
+from app.setup.tracing import traced_search, traced_services
 from app.utils.config import Settings
 
 
@@ -34,10 +36,15 @@ def agent_policy(config: Settings) -> AgentPolicy:
     )
 
 
-def agent_steps(engine: Engine, services: ExternalServices, policy: AgentPolicy) -> AgentSteps:
+def agent_steps(
+    engine: Engine, config: Settings, services: ExternalServices, policy: AgentPolicy
+) -> AgentSteps:
     repository = RetrievalRepository(engine)
-    retriever = HybridRetriever(
-        services.embeddings, services.vectors, repository, repository, TermOverlapReranker()
+    retriever = traced_search(
+        HybridRetriever(
+            services.embeddings, services.vectors, repository, repository, TermOverlapReranker()
+        ),
+        config,
     )
     model = BudgetedModel(services.reasoning, policy, time.monotonic)
     return AgentSteps(
@@ -54,11 +61,12 @@ def agent_steps(engine: Engine, services: ExternalServices, policy: AgentPolicy)
 
 
 def conversation_service(
-    engine: Engine, config: Settings, services: ExternalServices
+    engine: Engine, config: Settings, services: ExternalServices, tracing: RunTracing
 ) -> ConversationService:
     provider = config.selected_model
     policy = agent_policy(config)
-    workflow = LangGraphWorkflow(agent_steps(engine, services, policy))
+    services = traced_services(services, config)
+    workflow = LangGraphWorkflow(agent_steps(engine, config, services, policy), tracing)
     assistant = Assistant(
         TurnRepository(engine, config.turn_lease_seconds),
         RetrievalRepository(engine),

@@ -40,6 +40,11 @@ def flow_scope(**ids: object) -> Iterator[None]:
         _scope.reset(token)
 
 
+def flow_ids() -> dict[str, str]:
+    """The enclosing `flow_scope` ids, e.g. to tag a trace with the run's `turn_id`."""
+    return {name: str(value) for name, value in _scope.get().items()}
+
+
 def job_flow(kind: str) -> str:
     return JOB_FLOWS.get(kind, kind)
 

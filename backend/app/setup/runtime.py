@@ -18,6 +18,7 @@ from app.setup.conversations import conversation_service
 from app.setup.knowledge import source_service
 from app.setup.schema import REQUIRED_TABLES, SCHEMA_REVISION
 from app.setup.services import ExternalServices, create_services
+from app.setup.tracing import create_tracing
 from app.utils.config import Settings
 from app.utils.security import Identity
 
@@ -47,7 +48,7 @@ def build_runtime(config: Settings, services: ExternalServices | None) -> ApiRun
         if services is None:
             services = create_services(config, resources)
         return ApiRuntime(
-            conversation_service(engine, config, services),
+            conversation_service(engine, config, services, create_tracing(config, resources)),
             source_service(engine, config),
             HealthService(DatabaseHealth(engine, REQUIRED_TABLES, SCHEMA_REVISION)),
             DevelopmentIdentityRepository(engine),

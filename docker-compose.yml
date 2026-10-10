@@ -29,6 +29,10 @@ x-backend-environment: &backend-environment
   CONTEXTMESH_DECISION_ENABLED: "${CONTEXTMESH_DECISION_ENABLED:-false}"
   CONTEXTMESH_DECISION_MODEL: "${CONTEXTMESH_DECISION_MODEL:-typesafe/jev-1.13}"
   CONTEXTMESH_DECISION_ENDPOINT: "${CONTEXTMESH_DECISION_ENDPOINT:-https://openrouter.ai/api/alpha/decisions}"
+  LANGSMITH_TRACING: "${LANGSMITH_TRACING:-false}"
+  LANGSMITH_API_KEY: "${LANGSMITH_API_KEY:-}"
+  LANGSMITH_PROJECT: "${LANGSMITH_PROJECT:-contextmesh}"
+  LANGSMITH_ENDPOINT: "${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}"
 
 services:
   postgres:

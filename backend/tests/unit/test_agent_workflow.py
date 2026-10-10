@@ -10,7 +10,7 @@ from app.services.agent.budget import BudgetedModel
 from app.services.agent.checker import SupportChecker
 from app.services.agent.direct import DirectAnswerer
 from app.services.agent.gather import EvidenceGatherer
-from app.services.agent.graph import LangGraphWorkflow
+from app.services.agent.graph import RECURSION_LIMIT, LangGraphWorkflow, build_graph
 from app.services.agent.planner import SearchPlanner
 from app.services.agent.policy import AgentPolicy
 from app.services.agent.router import DecisionRouter
@@ -25,6 +25,7 @@ from app.services.rules.models import Message, Usage
 from app.utils.exceptions import ContextMeshError
 from app.utils.logging import flow_logger
 from app.utils.security import Identity
+from langgraph.errors import GraphRecursionError
 from support import ScriptedReasoning
 
 IDENTITY = Identity("agent-test", uuid4())
@@ -568,3 +569,27 @@ def test_answer_generation_sees_passages_but_not_conversation_history():
     run(reasoning, SourceRetriever({only.id: [passage(only.id, "Fact.")]}), (only,))
     assert "conversation" in reasoning.contents("search_plan")[0]
     assert set(reasoning.contents("grounded_answer")[0]) == {"question", "passages"}
+
+
+class EndlessSearch:
+    """Steps that always ask for another search, to exercise the graph-level bound."""
+
+    def __init__(self):
+        self.executed = 0
+
+    def step(self, state):
+        self.executed += 1
+        return state
+
+    def __getattr__(self, name):
+        predicates = {"should_answer_direct": False, "has_sources": True, "should_search": True}
+        if name in predicates:
+            return lambda state: predicates[name]
+        return self.step
+
+
+def test_the_whole_run_is_bounded_across_subgraphs():
+    steps = EndlessSearch()
+    with pytest.raises(GraphRecursionError):
+        build_graph(steps).invoke({"state": object()})
+    assert steps.executed == RECURSION_LIMIT - 1
