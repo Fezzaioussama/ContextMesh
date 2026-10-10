@@ -56,6 +56,7 @@ export interface Claim {
 }
 
 export type AnswerStatus =
+  | "direct"
   | "answered"
   | "partial"
   | "insufficient_evidence"

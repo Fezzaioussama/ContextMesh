@@ -60,8 +60,17 @@ CONTEXTMESH_MODEL_PROVIDER=openrouter
 OPENROUTER_API_KEY=your-openrouter-key
 OPENROUTER_MODEL=openai/gpt-4.1-mini
 OPENROUTER_EMBEDDING_MODEL=openai/text-embedding-3-small
+CONTEXTMESH_DECISION_ENABLED=true
+CONTEXTMESH_DECISION_MODEL=typesafe/jev-1.13
 CONTEXTMESH_MAX_OUTPUT_TOKENS=8192
 ```
+
+With decision routing enabled, Jev classifies each turn before retrieval. Questions
+that need indexed, current, private, or source-specific facts continue through the
+grounded RAG workflow; greetings, rewriting, creative work, and other self-contained
+requests go directly to the chat model without searching sources. Unavailable or
+low-confidence decisions conservatively fall back to retrieval. Jev uses the
+server-side `OPENROUTER_API_KEY`, even when the main chat provider is OpenAI.
 
 Reasoning models (for example DeepSeek) spend hidden reasoning tokens inside the
 output budget — measured at up to several thousand per agent step — so keep
@@ -139,11 +148,12 @@ Today those sources are uploaded Markdown and text files. Web pages, PDF/Office 
 
 ### How a question is answered
 
-1. **Plan** — the model sees only the authorized source catalog and proposes sources and up to two queries; the server drops unknown IDs and never widens an explicit source filter.
-2. **Retrieve** — Qdrant vector search and PostgreSQL full-text search run in scope, ranks are fused (RRF), and only chunks from live, published document versions are hydrated.
-3. **Assess and expand** — the model judges coverage; missing facts trigger reformulated queries or additional sources, bounded to three rounds, a 60,000-token budget, and a 75-second deadline that also caps every model call's total duration.
-4. **Answer and verify** — claims may cite only supplied passages; a separate support check flags unsupported claims, which get one repair and are then removed.
-5. **Release** — citations are built from canonical records, re-checked for visibility, and saved; a saved answer is withheld if any document it cited or consulted is later deleted.
+1. **Route** — optional Jev classification sends self-contained requests to a direct answer and everything else, including uncertain classifications, to retrieval.
+2. **Plan** — the model sees only the authorized source catalog and proposes sources and up to two queries; the server drops unknown IDs and never widens an explicit source filter.
+3. **Retrieve** — Qdrant vector search and PostgreSQL full-text search run in scope, ranks are fused (RRF), and only chunks from live, published document versions are hydrated.
+4. **Assess and expand** — the model judges coverage; missing facts trigger reformulated queries or additional sources, bounded to three rounds, a 60,000-token budget, and a 75-second deadline that also caps every model call's total duration.
+5. **Answer and verify** — claims may cite only supplied passages; a separate support check flags unsupported claims, which get one repair and are then removed. Direct answers carry no citations and are labeled separately.
+6. **Release** — citations are built from canonical records, re-checked for visibility, and saved; a saved grounded answer is withheld if any document it cited or consulted is later deleted.
 
 ## Proposed architecture
 

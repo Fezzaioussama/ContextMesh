@@ -1,9 +1,11 @@
 """Owned resources close on shutdown and failure; injected services stay caller-owned."""
 
+from contextlib import ExitStack
 from unittest.mock import Mock
 
 import pytest
 from app.setup import api, runtime
+from app.setup import services as service_factory
 from app.setup.services import ExternalServices
 from app.utils.config import Settings
 from fastapi.testclient import TestClient
@@ -89,3 +91,26 @@ def test_http_composition_failure_releases_owned_resources(resources, monkeypatc
         api.create_app(settings)
     model.close.assert_called_once_with()
     engine.dispose.assert_called_once_with()
+
+
+def test_production_external_services_own_decision_adapter(monkeypatch):
+    reasoning = Mock()
+    embeddings = Mock(identity="fixture-embedding")
+    decisions = Mock()
+    vector_client = Mock()
+    vectors = Mock()
+    fetcher = Mock()
+    monkeypatch.setattr(service_factory, "create_reasoning_model", Mock(return_value=reasoning))
+    monkeypatch.setattr(service_factory, "create_embedding_model", Mock(return_value=embeddings))
+    monkeypatch.setattr(service_factory, "create_decision_model", Mock(return_value=decisions))
+    monkeypatch.setattr(service_factory, "QdrantClient", Mock(return_value=vector_client))
+    monkeypatch.setattr(service_factory, "QdrantVectorIndex", Mock(return_value=vectors))
+    monkeypatch.setattr(service_factory, "SafeHttpFetcher", Mock(return_value=fetcher))
+    settings = Settings(
+        _env_file=None, decision_enabled=True, openrouter_api_key="router-fixture-key"
+    )
+    with ExitStack() as resources:
+        external = service_factory.create_services(settings, resources)
+        assert external.decisions is decisions
+        decisions.close.assert_not_called()
+    decisions.close.assert_called_once_with()

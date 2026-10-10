@@ -7,9 +7,14 @@ from typing import Protocol
 
 from qdrant_client import QdrantClient
 
-from app.data.llm.factory import create_embedding_model, create_reasoning_model
+from app.data.llm.factory import (
+    create_decision_model,
+    create_embedding_model,
+    create_reasoning_model,
+)
 from app.data.vectors.qdrant import QdrantVectorIndex
 from app.data.web.fetcher import SafeHttpFetcher
+from app.services.ports.decisions import DecisionModel
 from app.services.ports.ingestion import VectorWriter
 from app.services.ports.models import EmbeddingModel, ReasoningModel
 from app.services.ports.retrieval import VectorSearch
@@ -27,6 +32,7 @@ class ExternalServices:
     embeddings: EmbeddingModel
     vectors: VectorIndex
     fetcher: WebFetcher
+    decisions: DecisionModel | None = None
 
 
 def collection_name(embedding_identity: str) -> str:
@@ -36,6 +42,7 @@ def collection_name(embedding_identity: str) -> str:
 
 def create_services(config: Settings, resources: ExitStack) -> ExternalServices:
     provider = config.selected_model
+    decision_provider = config.selected_decision
     api_key = provider.api_key.get_secret_value()
     reasoning = create_reasoning_model(
         api_key=api_key,
@@ -53,6 +60,14 @@ def create_services(config: Settings, resources: ExitStack) -> ExternalServices:
         timeout=config.provider_timeout_seconds,
     )
     resources.callback(embeddings.close)
+    decisions = create_decision_model(
+        enabled=decision_provider.enabled,
+        api_key=decision_provider.api_key.get_secret_value(),
+        model=decision_provider.model,
+        endpoint=decision_provider.endpoint,
+        timeout=config.provider_timeout_seconds,
+    )
+    resources.callback(decisions.close)
     client = QdrantClient(url=config.qdrant_url, timeout=5, check_compatibility=False)
     resources.callback(client.close)
     vectors = QdrantVectorIndex(client, collection_name(embeddings.identity))
@@ -60,4 +75,4 @@ def create_services(config: Settings, resources: ExitStack) -> ExternalServices:
         timeout_seconds=config.web_timeout_seconds, max_bytes=config.web_max_page_bytes
     )
     resources.callback(fetcher.close)
-    return ExternalServices(reasoning, embeddings, vectors, fetcher)
+    return ExternalServices(reasoning, embeddings, vectors, fetcher, decisions)

@@ -11,6 +11,7 @@ import { evidence } from "../../api/knowledge";
 import { ExternalLink } from "../../components/ExternalLink";
 
 const statusLabels: Record<AnswerStatus, string> = {
+  direct: "Direct answer",
   answered: "Grounded answer",
   partial: "Partial answer",
   insufficient_evidence: "Not enough evidence",
@@ -18,6 +19,8 @@ const statusLabels: Record<AnswerStatus, string> = {
 };
 
 const stageLabels: Record<string, string> = {
+  route: "Route",
+  direct: "Answer",
   plan: "Plan",
   retrieve: "Search",
   assess: "Assess",

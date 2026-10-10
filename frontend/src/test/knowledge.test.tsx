@@ -23,6 +23,24 @@ async function readyComposer() {
 }
 
 describe("grounded answers", () => {
+  it("labels a citation-free routed response as a direct answer", async () => {
+    selectConversation();
+    const direct = message("d", "assistant", "Hello! How can I help?", {
+      status: "direct",
+      claims: [],
+      citations: [],
+      gaps: [],
+    });
+    vi.stubGlobal(
+      "fetch",
+      createHttp(async () => json({ items: [direct], next_cursor: null })),
+    );
+    render(<App />);
+    expect(await screen.findByText("Direct answer")).toBeTruthy();
+    expect(screen.getByText("Hello! How can I help?")).toBeTruthy();
+    expect(screen.queryByRole("list", { name: "Citations" })).toBeNull();
+  });
+
   it("renders claims, linked citations, gaps, and loads the full passage", async () => {
     selectConversation();
     const answer = message("a", "assistant", "We use OIDC. [1]", groundedAnswer);

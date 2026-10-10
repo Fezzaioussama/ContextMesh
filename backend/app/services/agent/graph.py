@@ -42,6 +42,8 @@ class LangGraphWorkflow:
 def build_graph(steps: AgentSteps):
     graph = StateGraph(GraphState)
     for name, step in (
+        ("route", steps.route),
+        ("direct", steps.answer_direct),
         ("plan", steps.plan),
         ("retrieve", steps.retrieve),
         ("assess", steps.assess),
@@ -51,7 +53,11 @@ def build_graph(steps: AgentSteps):
     ):
         graph.add_node(name, _node(name, step))
     graph.add_node("release", _release(steps.release))
-    _branch(graph, START, steps.has_sources, "plan", "release")
+    graph.add_edge(START, "route")
+    graph.add_conditional_edges(
+        "route", _route_after_classification(steps), ["direct", "plan", "release"]
+    )
+    graph.add_edge("direct", "release")
     graph.add_edge("plan", "retrieve")
     graph.add_edge("retrieve", "assess")
     _branch(graph, "assess", steps.should_search, "retrieve", "generate")
@@ -60,6 +66,16 @@ def build_graph(steps: AgentSteps):
     _branch(graph, "repair", steps.has_claims, "verify", "release")
     graph.add_edge("release", END)
     return graph.compile()
+
+
+def _route_after_classification(steps: AgentSteps) -> Callable[[GraphState], str]:
+    def route(graph_state: GraphState) -> str:
+        state = graph_state["state"]
+        if steps.should_answer_direct(state):
+            return "direct"
+        return "plan" if steps.has_sources(state) else "release"
+
+    return route
 
 
 def _node(name: str, step: Callable[[AgentState], AgentState]) -> Callable[[GraphState], dict]:

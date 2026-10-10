@@ -10,6 +10,7 @@ from app.services.rules.answers import (
     Answer,
     Citation,
     Claim,
+    direct_answer,
     insufficient_answer,
     rendered_text,
     snippet,
@@ -19,6 +20,8 @@ from app.services.rules.models import AgentOutcome
 
 
 def released(state: AgentState, policy: AgentPolicy) -> AgentOutcome:
+    if state.route == "direct":
+        return _released_direct(state)
     kept = _supported(state)
     answer = _answer(state, kept, _gaps(state, policy))
     removed = _removed(state, kept)
@@ -32,6 +35,12 @@ def released(state: AgentState, policy: AgentPolicy) -> AgentOutcome:
         summary = "No supported answer was found; reported the evidence gap."
     trace = state.traced("release", summary).trace
     return AgentOutcome(answer, trace, state.usage, _consulted(state))
+
+
+def _released_direct(state: AgentState) -> AgentOutcome:
+    answer = direct_answer(state.direct_response)
+    trace = state.traced("release", "Released a citation-free direct response.").trace
+    return AgentOutcome(answer, trace, state.usage)
 
 
 def _consulted(state: AgentState) -> tuple[UUID, ...]:

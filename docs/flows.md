@@ -30,7 +30,7 @@ Work that takes time is a durable job in PostgreSQL that the worker picks up.
 | `add_source` | Create a source (files or website) | API |
 | `upload_document` | Upload a file and get it indexed | API, then worker |
 | `crawl_website` | Crawl a website source | API, then worker |
-| `ask_question` | Ask a question and get a cited answer | API |
+| `ask_question` | Ask a question and get a direct or cited answer | API |
 | `delete_document` / `delete_source` | Remove a document or a source | API, then worker |
 
 ---
@@ -119,7 +119,7 @@ Logs (all with the crawl's `job_id`): `step=job_started`, then per page
 `step=job_ended` (or `job_failed`, e.g. `code=robots_disallowed`). Page URLs are
 logged without their query string, which may carry tokens.
 
-## `ask_question`: ask a question and get a cited answer
+## `ask_question`: ask a question and get a direct or cited answer
 
 1. `controllers/chat.py` `send_message`:
    `POST /api/v1/assistant/conversations/{id}/messages` with an
@@ -129,19 +129,26 @@ logged without their query string, which may carry tokens.
    - a repeated key returns the saved answer
      (`data/db/repositories/turn_repository.py` `replay`);
    - otherwise the turn is claimed (`claim`), the agent runs, and the answer with
-     its citations is saved (`complete`).
+     any citations is saved (`complete`).
 3. The agent (`services/agent/graph.py`, steps in `services/agent/steps.py`):
-   **plan** (`planner.py`) → **retrieve** (`gather.py`, hybrid search in
-   `services/retrieval.py`: PostgreSQL full text + Qdrant, fused and reranked) →
-   **assess** (`assessor.py`, may search again) → **generate** (`writer.py`) →
-   **verify** (`checker.py`) → **repair** (once, if needed) → **release**
-   (`release.py`). Limits (rounds, tokens, deadline) are in `policy.py`; model
-   calls go through `data/llm/openai.py`.
+   **route** (`router.py`, Jev typed decision) chooses one of two bounded paths:
+   - Questions that need indexed, current, private, or source-specific facts use
+     **plan** (`planner.py`) → **retrieve** (`gather.py`, hybrid search in
+     `services/retrieval.py`: PostgreSQL full text + Qdrant, fused and reranked) →
+     **assess** (`assessor.py`, may search again) → **generate** (`writer.py`) →
+     **verify** (`checker.py`) → **repair** (once, if needed) → **release**
+     (`release.py`).
+   - Greetings, transformations, creative work, and other questions that need no
+     resource use **direct** (`direct.py`) → **release**, with no citations.
+   Low-confidence or unavailable routing falls back to retrieval. Limits (rounds,
+   tokens, deadline) are in `policy.py`; generative calls go through
+   `data/llm/openai.py`, and typed routing goes through `data/llm/decisions.py`.
 
 Logs (all with `conversation_id`, and `turn_id` from `turn_started` on):
-`step=turn_started`, one `step=agent_plan`, `agent_retrieve`,
+`step=turn_started`, then `step=agent_route`; a grounded path logs `agent_plan`, `agent_retrieve`,
 `agent_assess`, `agent_generate`, `agent_verify`, `agent_repair` per graph step,
-then `step=answered status=… citations=… tokens=…` or `step=failed code=…`.
+while a direct path logs `agent_direct`. Both end with
+`step=answered status=… citations=… tokens=…` or `step=failed code=…`.
 A replay logs `step=replayed`. A question refused before a turn starts (unknown
 source filter, a turn already in progress, a reused key with another message)
 logs only `step=rejected code=…`.

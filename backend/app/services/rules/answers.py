@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Literal
 from uuid import UUID
 
-AnswerStatus = Literal["answered", "partial", "insufficient_evidence", "withheld"]
+AnswerStatus = Literal["direct", "answered", "partial", "insufficient_evidence", "withheld"]
 
 NO_EVIDENCE_GAP = "No indexed passage in the selected sources answers this question."
 UNSPECIFIED_GAP = "The model judged the answer incomplete but did not name the missing detail."
@@ -63,6 +63,10 @@ def insufficient_answer(gaps: tuple[str, ...]) -> Answer:
     reported = gaps or (NO_EVIDENCE_GAP,)
     text = "I could not find enough evidence in the selected sources to answer this question."
     return Answer("insufficient_evidence", text, (), (), reported)
+
+
+def direct_answer(text: str) -> Answer:
+    return Answer("direct", text, (), (), ())
 
 
 def withheld_answer() -> Answer:

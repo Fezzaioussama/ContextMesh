@@ -13,6 +13,7 @@ class AgentPolicy:
     answer_reserve_seconds: float = 20.0
     round_reserve_seconds: float = 10.0
     minimum_call_seconds: float = 2.0
+    direct_route_confidence: float = 0.8
     max_total_tokens: int = 60_000
     max_evidence: int = 24
     max_context_passages: int = 8

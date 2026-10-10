@@ -79,8 +79,12 @@ deadline (twice `CONTEXTMESH_WEB_TIMEOUT_SECONDS`, redirects included).
 ## Querying
 
 The agent is a bounded LangGraph state machine whose nodes are application
-services: **plan → retrieve → assess ⟲ expand → answer → verify ⟲ repair →
-release**. Server policy (`services/agent/policy.py`) limits rounds (3), query
+services. An optional Jev decision step first routes self-contained conversation
+to **direct answer → release**; source-specific, private, current, and uncertain
+questions use **plan → retrieve → assess ⟲ expand → answer → verify ⟲ repair
+→ release**. Direct answers are explicitly citation-free. Classifier failures and
+low-confidence choices conservatively take the retrieval path. Server policy
+(`services/agent/policy.py`) limits rounds (3), query
 variants (2), repairs (1), claims, context passages, and the deadline (60 s by
 default) plus a total token budget; model output can never raise them. Every structured model reply is
 schema-checked; unknown source or passage IDs are dropped. Only hydrated passages

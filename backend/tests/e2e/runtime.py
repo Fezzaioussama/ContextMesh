@@ -106,6 +106,7 @@ def api_environment(settings, provider_url, configured=True):
         OPENROUTER_MODEL="openai/gpt-4.1-mini",
         OPENROUTER_EMBEDDING_MODEL="fixture/embedding",
         OPENROUTER_BASE_URL=provider_url,
+        CONTEXTMESH_DECISION_ENABLED="false",
         CONTEXTMESH_ALLOWED_ORIGINS=json.dumps([settings.frontend_url]),
     )
     if not configured:

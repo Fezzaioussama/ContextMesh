@@ -1,12 +1,15 @@
 """Typed workflow state; graph adapters carry it but never interpret its policy."""
 
 from dataclasses import dataclass, field, replace
+from typing import Literal
 from uuid import UUID
 
 from app.services.rules.answers import TraceStage
 from app.services.rules.knowledge import CatalogSource, Evidence
 from app.services.rules.models import Message, Usage
 from app.utils.security import Identity
+
+Route = Literal["retrieve", "direct"]
 
 
 @dataclass(frozen=True)
@@ -30,6 +33,8 @@ class AgentState:
     history: tuple[Message, ...]
     catalog: tuple[CatalogSource, ...]
     deadline: float
+    route: Route = "retrieve"
+    direct_response: str = ""
     question: str = ""
     selected: tuple[UUID, ...] = ()
     queries: tuple[str, ...] = ()

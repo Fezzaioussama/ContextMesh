@@ -49,7 +49,7 @@ class ClaimResponse(BaseModel):
 
 class AnswerResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    status: Literal["answered", "partial", "insufficient_evidence", "withheld"]
+    status: Literal["direct", "answered", "partial", "insufficient_evidence", "withheld"]
     claims: list[ClaimResponse]
     citations: list[CitationResponse]
     gaps: list[str]

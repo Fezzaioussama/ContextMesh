@@ -12,10 +12,12 @@ from app.data.db.repositories.turn_repository import TurnRepository
 from app.services.agent.assessor import EvidenceAssessor
 from app.services.agent.budget import BudgetedModel
 from app.services.agent.checker import SupportChecker
+from app.services.agent.direct import DirectAnswerer
 from app.services.agent.gather import EvidenceGatherer
 from app.services.agent.graph import LangGraphWorkflow
 from app.services.agent.planner import SearchPlanner
 from app.services.agent.policy import AgentPolicy
+from app.services.agent.router import DecisionRouter
 from app.services.agent.steps import AgentSteps
 from app.services.agent.writer import AnswerWriter
 from app.services.assistant import Assistant
@@ -40,6 +42,8 @@ def agent_steps(engine: Engine, services: ExternalServices, policy: AgentPolicy)
     model = BudgetedModel(services.reasoning, policy, time.monotonic)
     return AgentSteps(
         model,
+        DecisionRouter(services.decisions, model, policy),
+        DirectAnswerer(model, policy),
         SearchPlanner(model, policy),
         EvidenceGatherer(retriever, model, policy),
         EvidenceAssessor(model, policy),

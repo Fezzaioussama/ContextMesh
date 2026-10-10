@@ -48,6 +48,47 @@ def test_openrouter_missing_key_does_not_use_openai_key():
     assert selected.api_key.get_secret_value() == ""
 
 
+def test_decision_configuration_uses_openrouter_credential_only():
+    decision = Settings(
+        _env_file=None,
+        decision_enabled=True,
+        api_key="direct-key-must-not-be-used",
+        openrouter_api_key="router-key",
+        decision_model="typesafe/fixture",
+        decision_endpoint="http://fixture.test/decisions",
+    ).selected_decision
+    assert (
+        decision.enabled,
+        decision.api_key.get_secret_value(),
+        decision.model,
+        decision.endpoint,
+    ) == (True, "router-key", "typesafe/fixture", "http://fixture.test/decisions")
+
+
+def test_decision_configuration_never_falls_back_to_openai_key():
+    decision = Settings(
+        _env_file=None,
+        decision_enabled=True,
+        api_key="direct-key-must-not-be-used",
+        openrouter_api_key="",
+    ).selected_decision
+    assert decision.api_key.get_secret_value() == ""
+
+
+def test_decision_environment_names_configure_the_server(monkeypatch):
+    monkeypatch.setenv("CONTEXTMESH_DECISION_ENABLED", "true")
+    monkeypatch.setenv("CONTEXTMESH_DECISION_MODEL", "typesafe/environment-model")
+    monkeypatch.setenv("CONTEXTMESH_DECISION_ENDPOINT", "http://fixture.test/decisions")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "environment-router-key")
+    decision = Settings(_env_file=None).selected_decision
+    assert (decision.enabled, decision.model, decision.endpoint) == (
+        True,
+        "typesafe/environment-model",
+        "http://fixture.test/decisions",
+    )
+    assert decision.api_key.get_secret_value() == "environment-router-key"
+
+
 def test_unknown_provider_is_rejected_before_startup():
     with pytest.raises(ValidationError):
         Settings(_env_file=None, model_provider="unknown")

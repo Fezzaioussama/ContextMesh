@@ -3,10 +3,12 @@
 from app.services.agent.assessor import EvidenceAssessor
 from app.services.agent.budget import BudgetedModel
 from app.services.agent.checker import SupportChecker
+from app.services.agent.direct import DirectAnswerer
 from app.services.agent.gather import EvidenceGatherer
 from app.services.agent.planner import SearchPlanner
 from app.services.agent.policy import AgentPolicy
 from app.services.agent.release import released
+from app.services.agent.router import DecisionRouter
 from app.services.agent.state import AgentState, Draft
 from app.services.agent.writer import AnswerWriter
 from app.services.rules.knowledge import CatalogSource
@@ -18,6 +20,8 @@ class AgentSteps:
     def __init__(
         self,
         model: BudgetedModel,
+        router: DecisionRouter,
+        direct: DirectAnswerer,
         planner: SearchPlanner,
         gatherer: EvidenceGatherer,
         assessor: EvidenceAssessor,
@@ -26,6 +30,8 @@ class AgentSteps:
         policy: AgentPolicy,
     ):
         self._model = model
+        self._router = router
+        self._direct = direct
         self._planner = planner
         self._gatherer = gatherer
         self._assessor = assessor
@@ -44,6 +50,15 @@ class AgentSteps:
 
     def has_sources(self, state: AgentState) -> bool:
         return bool(state.searchable)
+
+    def route(self, state: AgentState) -> AgentState:
+        return self._router.route(state)
+
+    def should_answer_direct(self, state: AgentState) -> bool:
+        return state.route == "direct"
+
+    def answer_direct(self, state: AgentState) -> AgentState:
+        return self._direct.answer(state)
 
     def plan(self, state: AgentState) -> AgentState:
         return self._planner.plan(state)

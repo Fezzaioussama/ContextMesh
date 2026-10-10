@@ -21,6 +21,14 @@ class ModelProviderSettings:
     base_url: str
 
 
+@dataclass(frozen=True)
+class DecisionProviderSettings:
+    enabled: bool
+    api_key: SecretStr
+    model: str
+    endpoint: str
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=BACKEND.parent / ".env", extra="ignore", populate_by_name=True
@@ -49,6 +57,14 @@ class Settings(BaseSettings):
     )
     openrouter_base_url: str = Field(
         default="https://openrouter.ai/api/v1", validation_alias="OPENROUTER_BASE_URL"
+    )
+    decision_enabled: bool = Field(default=False, validation_alias="CONTEXTMESH_DECISION_ENABLED")
+    decision_model: str = Field(
+        default="typesafe/jev-1.13", validation_alias="CONTEXTMESH_DECISION_MODEL"
+    )
+    decision_endpoint: str = Field(
+        default="https://openrouter.ai/api/alpha/decisions",
+        validation_alias="CONTEXTMESH_DECISION_ENDPOINT",
     )
     qdrant_url: str = Field(
         default="http://127.0.0.1:6333", validation_alias="CONTEXTMESH_QDRANT_URL"
@@ -113,6 +129,16 @@ class Settings(BaseSettings):
             )
         return ModelProviderSettings(
             "openai", self.api_key, self.model, self.embedding_model, self.base_url
+        )
+
+    @property
+    def selected_decision(self) -> DecisionProviderSettings:
+        """Jev is OpenRouter-only and must never inherit the selected chat credential."""
+        return DecisionProviderSettings(
+            self.decision_enabled,
+            self.openrouter_api_key,
+            self.decision_model,
+            self.decision_endpoint,
         )
 
     @field_validator("database_url")

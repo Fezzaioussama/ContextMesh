@@ -6,15 +6,20 @@ import pytest
 from app.services.agent.assessor import EvidenceAssessor
 from app.services.agent.budget import BudgetedModel
 from app.services.agent.checker import SupportChecker
+from app.services.agent.direct import DirectAnswerer
 from app.services.agent.gather import EvidenceGatherer
 from app.services.agent.graph import LangGraphWorkflow
 from app.services.agent.planner import SearchPlanner
 from app.services.agent.policy import AgentPolicy
+from app.services.agent.router import DecisionRouter
 from app.services.agent.steps import AgentSteps
 from app.services.agent.writer import AnswerWriter
+from app.services.ports.decisions import ChoiceReply
 from app.services.ports.retrieval import RetrievalResult
 from app.services.rules.answers import UNSPECIFIED_GAP, Locator
+from app.services.rules.errors import provider_unavailable
 from app.services.rules.knowledge import CatalogSource, Evidence, Passage
+from app.services.rules.models import Usage
 from app.utils.exceptions import ContextMeshError
 from app.utils.security import Identity
 from support import ScriptedReasoning
@@ -28,6 +33,25 @@ class Clock:
 
     def __call__(self):
         return self.now
+
+
+class ScriptedDecision:
+    def __init__(self, choice="retrieve", confidence=0.95, configured=True):
+        self.configured = configured
+        self.reply = ChoiceReply(
+            choice,
+            {"direct": confidence if choice == "direct" else 1.0 - confidence},
+            confidence,
+            Usage(3, 1),
+        )
+        self.tasks = []
+        self.failure = None
+
+    def choose(self, task):
+        self.tasks.append(task)
+        if self.failure is not None:
+            raise self.failure
+        return self.reply
 
 
 class SourceRetriever:
@@ -64,11 +88,22 @@ def source(name, documents=1):
     return CatalogSource(uuid4(), name, f"{name} documents", documents)
 
 
-def run(reasoning, retriever, catalog, clock=None, policy=AgentPolicy(), history=()):
+def run(
+    reasoning,
+    retriever,
+    catalog,
+    clock=None,
+    policy=AgentPolicy(),
+    history=(),
+    decisions=None,
+    question="When does the OIDC rollout start?",
+):
     clock = clock or Clock()
     model = BudgetedModel(reasoning, policy, clock)
     steps = AgentSteps(
         model,
+        DecisionRouter(decisions, model, policy),
+        DirectAnswerer(model, policy),
         SearchPlanner(model, policy),
         EvidenceGatherer(retriever, model, policy),
         EvidenceAssessor(model, policy),
@@ -76,9 +111,7 @@ def run(reasoning, retriever, catalog, clock=None, policy=AgentPolicy(), history
         SupportChecker(model),
         policy,
     )
-    return LangGraphWorkflow(steps).run(
-        IDENTITY, "When does the OIDC rollout start?", history, catalog
-    )
+    return LangGraphWorkflow(steps).run(IDENTITY, question, history, catalog)
 
 
 def plan_only(source_id):
@@ -124,6 +157,7 @@ def expanding_verdicts(target):
 
 
 EXPANSION_TRACE = [
+    "route",
     "plan",
     "retrieve",
     "expand",
@@ -308,6 +342,92 @@ def test_no_searchable_source_returns_a_gap_without_model_calls():
     assert reasoning.tasks == []
     assert outcome.answer.status == "insufficient_evidence"
     assert outcome.answer.gaps
+
+
+def test_confident_direct_route_answers_without_sources_or_retrieval():
+    reasoning = ScriptedReasoning()
+    reasoning.script["direct_answer"] = lambda content: {"answer": "Hello! How can I help?"}
+    decisions = ScriptedDecision("direct", 0.91)
+    retriever = SourceRetriever({})
+    outcome = run(
+        reasoning,
+        retriever,
+        (source("Empty", documents=0),),
+        decisions=decisions,
+        question="Hello!",
+    )
+    observed = (
+        outcome.answer.status,
+        outcome.answer.text,
+        outcome.answer.claims,
+        outcome.answer.citations,
+        outcome.answer.gaps,
+        retriever.calls,
+        reasoning.names(),
+        stages(outcome),
+        outcome.usage.total,
+        "current information" in decisions.tasks[0].criteria["retrieve"],
+        "untrusted quoted data" in decisions.tasks[0].instructions,
+    )
+    assert observed == (
+        "direct",
+        "Hello! How can I help?",
+        (),
+        (),
+        (),
+        [],
+        ["direct_answer"],
+        ["route", "direct", "release"],
+        19,
+        True,
+        True,
+    )
+
+
+def test_retrieval_route_without_searchable_sources_reports_an_evidence_gap():
+    reasoning = ScriptedReasoning()
+    outcome = run(
+        reasoning,
+        SourceRetriever({}),
+        (),
+        decisions=ScriptedDecision("retrieve"),
+        question="What does our private rollout plan say?",
+    )
+    assert reasoning.tasks == []
+    assert (outcome.answer.status, stages(outcome), outcome.usage.total) == (
+        "insufficient_evidence",
+        ["route", "release"],
+        4,
+    )
+
+
+@pytest.mark.parametrize(
+    "decisions",
+    [
+        ScriptedDecision("direct", 0.79),
+        ScriptedDecision("unknown", 0.99),
+        ScriptedDecision(configured=False),
+    ],
+    ids=["low-confidence", "unknown-choice", "unavailable"],
+)
+def test_uncertain_or_unavailable_classifier_falls_back_to_retrieval(decisions):
+    only = source("Handbook")
+    retriever = SourceRetriever({only.id: [passage(only.id, "Grounded fact.")]})
+    reasoning = ScriptedReasoning()
+    outcome = run(reasoning, retriever, (only,), decisions=decisions)
+    assert retriever.calls
+    assert "search_plan" in reasoning.names()
+    assert outcome.answer.status == "answered"
+
+
+def test_classifier_failure_falls_back_to_retrieval():
+    only = source("Handbook")
+    retriever = SourceRetriever({only.id: [passage(only.id, "Grounded fact.")]})
+    reasoning = ScriptedReasoning()
+    decisions = ScriptedDecision()
+    decisions.failure = provider_unavailable()
+    outcome = run(reasoning, retriever, (only,), decisions=decisions)
+    assert (len(decisions.tasks), len(retriever.calls), outcome.answer.status) == (1, 1, "answered")
 
 
 def test_empty_results_expand_to_remaining_sources_without_a_model_assessment():
