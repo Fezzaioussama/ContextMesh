@@ -23,6 +23,7 @@ from app.data.llm import (
     OpenRouterDecisionModel,
     OpenRouterEmbeddingModel,
     OpenRouterReasoningModel,
+    OpenRouterRerankModel,
 )
 from app.data.qdrant import QdrantVectorIndex
 from app.data.retrieval import RetrievalRepository
@@ -33,6 +34,7 @@ from app.data.tracing import (
     TracedDecisionModel,
     TracedEmbeddingModel,
     TracedReasoningModel,
+    TracedRerankModel,
     TracedSearch,
 )
 from app.services.agent.graph import AgentWorkflow
@@ -41,10 +43,20 @@ from app.services.agent.steps import Agent
 from app.services.chat import ConversationService
 from app.services.crawler import CrawlPolicy, SiteCrawler
 from app.services.indexing import DocumentIndexer, Eraser, IngestionWorker
-from app.services.models import DecisionModel, EmbeddingModel, Identity, ReasoningModel
+from app.services.models import (
+    DecisionModel,
+    EmbeddingModel,
+    Identity,
+    ReasoningModel,
+    RerankModel,
+)
 from app.services.retrieval import HybridRetriever
 from app.services.sources import SourceService
 from app.utils.config import Settings
+
+# A failed rerank falls back to term-coverage ranking, so a slow one should not hold up
+# the turn for the full provider timeout.
+RERANK_TIMEOUT_SECONDS = 10.0
 
 
 @dataclass(frozen=True)
@@ -54,6 +66,7 @@ class ExternalServices:
     vectors: QdrantVectorIndex
     fetcher: SafeHttpFetcher
     decisions: DecisionModel | None = None
+    reranker: RerankModel | None = None
 
 
 def collection_name(embedding_identity: str) -> str:
@@ -80,6 +93,13 @@ def create_services(config: Settings, resources: ExitStack) -> ExternalServices:
         timeout=config.provider_timeout_seconds,
     )
     resources.callback(embeddings.close)
+    reranker = OpenRouterRerankModel(
+        api_key=api_key,
+        model=provider.rerank_model,
+        base_url=provider.base_url,
+        timeout=min(config.provider_timeout_seconds, RERANK_TIMEOUT_SECONDS),
+    )
+    resources.callback(reranker.close)
     decisions = OpenRouterDecisionModel(
         enabled=decision.enabled,
         api_key=decision.api_key.get_secret_value(),
@@ -95,7 +115,7 @@ def create_services(config: Settings, resources: ExitStack) -> ExternalServices:
         timeout_seconds=config.web_timeout_seconds, max_bytes=config.web_max_page_bytes
     )
     resources.callback(fetcher.close)
-    return ExternalServices(reasoning, embeddings, vectors, fetcher, decisions)
+    return ExternalServices(reasoning, embeddings, vectors, fetcher, decisions, reranker)
 
 
 # API
@@ -126,7 +146,8 @@ def build_api(config: Settings, services: ExternalServices | None, resources: Ex
     )
     retrieval = RetrievalRepository(engine)
     retriever = traced_search(
-        HybridRetriever(services.embeddings, services.vectors, retrieval), config
+        HybridRetriever(services.embeddings, services.vectors, retrieval, services.reranker),
+        config,
     )
     agent = Agent(services.reasoning, retriever, services.decisions, policy)
     provider = config.selected_model
@@ -177,6 +198,9 @@ def traced_services(services: ExternalServices, config: Settings) -> ExternalSer
     decisions = services.decisions
     if decisions is not None:
         decisions = TracedDecisionModel(decisions, model=config.selected_decision.model)
+    reranker = services.reranker
+    if reranker is not None:
+        reranker = TracedRerankModel(reranker, model=provider.rerank_model)
     return replace(
         services,
         reasoning=TracedReasoningModel(
@@ -184,6 +208,7 @@ def traced_services(services: ExternalServices, config: Settings) -> ExternalSer
         ),
         embeddings=TracedEmbeddingModel(services.embeddings),
         decisions=decisions,
+        reranker=reranker,
     )
 
 

@@ -17,7 +17,9 @@ from app.services.models import (
     DecisionModel,
     EmbeddingModel,
     Evidence,
+    InputType,
     ReasoningModel,
+    RerankModel,
     RetrievalResult,
     StructuredReply,
     StructuredTask,
@@ -126,8 +128,31 @@ class TracedEmbeddingModel:
     def identity(self) -> str:
         return self._inner.identity
 
-    def embed(self, texts: Sequence[str]) -> tuple[tuple[float, ...], ...]:
-        return self._embed(texts)
+    def embed(self, texts: Sequence[str], input_type: InputType) -> tuple[tuple[float, ...], ...]:
+        return self._embed(texts, input_type)
+
+
+class TracedRerankModel:
+    def __init__(self, inner: RerankModel, *, model: str):
+        self._inner = inner
+        self._rerank = traceable(
+            run_type="chain",
+            name="rerank",
+            metadata={"ls_provider": "openrouter", "rerank_model": model},
+            # The hybrid_search span already lists the passages; scores line up with them.
+            process_inputs=lambda inputs: {
+                "query": inputs["query"],
+                "documents": len(inputs["documents"]),
+            },
+            process_outputs=lambda scores: {"scores": list(scores)},
+        )(inner.rerank)
+
+    @property
+    def configured(self) -> bool:
+        return self._inner.configured
+
+    def rerank(self, query: str, documents: Sequence[str]) -> tuple[float, ...]:
+        return self._rerank(query, documents)
 
 
 class TracedSearch:

@@ -1,8 +1,9 @@
 """Hybrid retrieval: typed queries go to the engine that suits them (questions and the
 hypothetical answer to vector search, keywords to full-text search), ranks are fused with
 per-engine weights, candidates are hydrated from PostgreSQL (which re-checks access), then
-reranked by query-term coverage."""
+reranked by the rerank model, or by query-term coverage when that model is off or fails."""
 
+import logging
 import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -15,10 +16,13 @@ from app.services.models import (
     Evidence,
     Identity,
     Passage,
+    RerankModel,
     RetrievalResult,
     SearchQueries,
 )
-from app.utils.errors import VectorIndexUnavailable
+from app.utils.errors import ContextMeshError, VectorIndexUnavailable
+
+logger = logging.getLogger(__name__)
 
 RRF_K = 60
 COVERAGE_WEIGHT = 0.3
@@ -49,11 +53,13 @@ class HybridRetriever:
         embeddings: EmbeddingModel,
         vectors: QdrantVectorIndex,
         store: RetrievalRepository,
+        reranker: RerankModel | None = None,
         policy: RetrievalPolicy = RetrievalPolicy(),
     ):
         self._embeddings = embeddings
         self._vectors = vectors
         self._store = store
+        self._reranker = reranker
         self._policy = policy
 
     def search(
@@ -71,12 +77,12 @@ class HybridRetriever:
         semantic = queries.questions or queries.keywords
         lexical = queries.keywords or queries.questions
         weights = [policy.vector_weight] * len(semantic)
-        if queries.hypothetical:
-            semantic = (*semantic, queries.hypothetical)
-            weights.append(policy.hypothetical_weight)
         rankings: list[tuple[float, Sequence[UUID]]] = []
         try:
-            vectors = self._embeddings.embed(semantic)
+            vectors = self._embeddings.embed(semantic, "search_query")
+            if queries.hypothetical:  # A pseudo-passage, so it is matched as a document.
+                vectors += self._embeddings.embed((queries.hypothetical,), "search_document")
+                weights.append(policy.hypothetical_weight)
             for weight, vector in zip(weights, vectors, strict=True):
                 found = self._vectors.search(
                     vector, identity.workspace_id, source_ids, policy.vector_candidates
@@ -92,9 +98,26 @@ class HybridRetriever:
         fused = reciprocal_rank_fusion(rankings)
         strongest = sorted(fused, key=lambda item: (-fused[item], str(item)))[: policy.hydrated]
         passages = self._store.hydrate(identity, source_ids, tuple(strongest))
-        ranked = rerank(queries.texts, passages, fused)[: policy.results]
+        ranked = self._ranked(queries.texts, passages, fused)[: policy.results]
         evidence = tuple(Evidence(passage, score, round_number) for passage, score in ranked)
         return RetrievalResult(evidence, len(fused), vector_available)
+
+    def _ranked(
+        self, queries: tuple[str, ...], passages: tuple[Passage, ...], fused: dict[UUID, float]
+    ) -> tuple[tuple[Passage, float], ...]:
+        """The rerank model's relevance scores; the deterministic baseline when the model
+        is off or fails, so a rerank outage never fails the turn."""
+        reranker = self._reranker
+        if passages and reranker is not None and reranker.configured:
+            documents = [rerank_text(passage) for passage in passages]
+            try:
+                scores = reranker.rerank("\n".join(queries), documents)
+            except ContextMeshError:
+                logger.warning("Rerank model unavailable; ranked by query-term coverage.")
+            else:
+                scored = zip(passages, scores, strict=True)
+                return tuple(sorted(scored, key=lambda item: (-item[1], str(item[0].chunk_id))))
+        return rerank(queries, passages, fused)
 
 
 def reciprocal_rank_fusion(
@@ -124,6 +147,11 @@ def rerank(
         score = round((1 - COVERAGE_WEIGHT) * rank_signal + COVERAGE_WEIGHT * coverage, 6)
         scored.append((passage, score))
     return tuple(sorted(scored, key=lambda item: (-item[1], str(item[0].chunk_id))))
+
+
+def rerank_text(passage: Passage) -> str:
+    """What the rerank model reads: the document title and heading path, then the text."""
+    return f"{' > '.join((passage.title, *passage.locator.heading_path))}\n\n{passage.text}"
 
 
 def query_terms(text: str) -> frozenset[str]:

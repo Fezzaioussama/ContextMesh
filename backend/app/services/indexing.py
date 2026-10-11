@@ -146,7 +146,9 @@ class DocumentIndexer:
         return chunks
 
     def _embed(self, target: IndexTarget, generation_id: UUID, batch: tuple[ChunkDraft, ...]):
-        vectors = self._embeddings.embed([chunk.embedding_text for chunk in batch])
+        vectors = self._embeddings.embed(
+            [chunk.embedding_text for chunk in batch], "search_document"
+        )
         self._vectors.upsert(
             [
                 VectorPoint(

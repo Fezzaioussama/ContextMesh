@@ -100,6 +100,7 @@ def api_environment(settings, provider_url, configured=True):
         OPENROUTER_API_KEY="router-fixture-key",
         OPENROUTER_MODEL="deepseek/deepseek-v4.1-flash",
         OPENROUTER_EMBEDDING_MODEL="fixture/embedding",
+        OPENROUTER_RERANK_MODEL="fixture/rerank",
         OPENROUTER_BASE_URL=provider_url,
         CONTEXTMESH_DECISION_ENABLED="false",
         CONTEXTMESH_ALLOWED_ORIGINS=json.dumps([settings.frontend_url]),

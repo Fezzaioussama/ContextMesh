@@ -17,6 +17,7 @@ class ModelProviderSettings:
     api_key: SecretStr
     model: str
     embedding_model: str
+    rerank_model: str
     base_url: str
 
 
@@ -51,7 +52,11 @@ class Settings(BaseSettings):
         default="deepseek/deepseek-v4.1-flash", validation_alias="OPENROUTER_MODEL"
     )
     openrouter_embedding_model: str = Field(
-        default="openai/text-embedding-3-small", validation_alias="OPENROUTER_EMBEDDING_MODEL"
+        default="voyageai/voyage-4-large", validation_alias="OPENROUTER_EMBEDDING_MODEL"
+    )
+    # Empty turns model reranking off; retrieval then ranks by query-term coverage.
+    openrouter_rerank_model: str = Field(
+        default="voyageai/rerank-3", validation_alias="OPENROUTER_RERANK_MODEL"
     )
     openrouter_base_url: str = Field(
         default="https://openrouter.ai/api/v1", validation_alias="OPENROUTER_BASE_URL"
@@ -127,12 +132,13 @@ class Settings(BaseSettings):
 
     @property
     def selected_model(self) -> ModelProviderSettings:
-        """OpenRouter is the only model provider, for both chat and embeddings."""
+        """OpenRouter is the only model provider, for chat, embeddings, and reranking."""
         return ModelProviderSettings(
             "openrouter",
             self.openrouter_api_key,
             self.openrouter_model,
             self.openrouter_embedding_model,
+            self.openrouter_rerank_model,
             self.openrouter_base_url,
         )
 

@@ -28,6 +28,8 @@ class OpenRouterTransport:
         payload = json.loads(request.content)
         if request.url.path.endswith("/embeddings"):
             return httpx.Response(200, json=_embedding_body(payload["input"]))
+        if request.url.path.endswith("/rerank"):
+            return httpx.Response(200, json=_rerank_body(payload["documents"]))
         return httpx.Response(200, json=_response_body(payload))
 
 
@@ -42,6 +44,14 @@ def _embedding_body(texts):
         "model": "vendor/embed",
         "usage": {"prompt_tokens": 1, "total_tokens": 1},
     }
+
+
+def _rerank_body(documents):
+    results = [
+        {"index": index, "relevance_score": 1 / (index + 1), "document": {"text": text}}
+        for index, text in enumerate(documents)
+    ]
+    return {"model": "vendor/rerank", "results": results[::-1]}
 
 
 def _response_body(payload):
@@ -87,6 +97,7 @@ def router_settings(database_url, tmp_path, key="router-fixture-key"):
         openrouter_api_key=key,
         openrouter_model="vendor/fixture-model",
         openrouter_embedding_model="vendor/embed",
+        openrouter_rerank_model="vendor/rerank",
     )
 
 
@@ -118,10 +129,12 @@ def assert_routing(transport, settings):
     }
     assert routes == {
         ("openrouter.ai", "/api/v1/embeddings", "Bearer router-fixture-key"),
+        ("openrouter.ai", "/api/v1/rerank", "Bearer router-fixture-key"),
         ("openrouter.ai", "/api/v1/responses", "Bearer router-fixture-key"),
     }
     assert sent_shapes(transport) == {
         ("embeddings", "vendor/embed", None, None, None),
+        ("rerank", "vendor/rerank", None, None, None),
         ("responses", "vendor/fixture-model", False, settings.max_output_tokens, True),
     }
 

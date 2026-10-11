@@ -70,8 +70,8 @@ without their query string.
 3. The agent (`services/agent/`) is one LangGraph run. **route** (Jev classifier)
    picks a path; uncertain or unavailable routing retrieves:
    - grounded: plan (standalone question, rewrites, keywords, hypothetical answer)
-     → retrieve (`services/retrieval.py`: vector + keyword, weighted RRF) → rerank
-     (model grades passages) → assess (may search again) → generate → verify →
+     → retrieve (`services/retrieval.py`: vector + keyword, weighted RRF, rerank
+     model) → rerank (chat model grades passages) → assess (may search again) → generate → verify →
      repair (once) → release;
    - direct (greetings, rewriting, general reasoning): direct → release, no
      citations.

@@ -172,7 +172,7 @@ def test_without_a_tracing_scope_traced_ports_upload_nothing(monkeypatch):
     uploads = []
     monkeypatch.setattr(Client, "create_run", lambda self, *args, **kwargs: uploads.append(args))
     workflow(ScriptedReasoning()).run(IDENTITY, "When does the OIDC rollout start?", (), (SOURCE,))
-    TracedEmbeddingModel(HashEmbeddings()).embed(["outside any run"])
+    TracedEmbeddingModel(HashEmbeddings()).embed(["outside any run"], "search_query")
     assert uploads == []
 
 

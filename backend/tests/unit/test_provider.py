@@ -8,7 +8,11 @@ from unittest.mock import MagicMock, Mock
 
 import httpx
 import pytest
-from app.data.llm import OpenRouterEmbeddingModel, OpenRouterReasoningModel
+from app.data.llm import (
+    OpenRouterEmbeddingModel,
+    OpenRouterReasoningModel,
+    OpenRouterRerankModel,
+)
 from app.services.models import StructuredTask, Usage
 from app.utils.errors import ContextMeshError
 from openai import OpenAI
@@ -46,12 +50,14 @@ def response_body(status="completed", content='{"ok": true}'):
 class RecordingProvider:
     def __init__(self, status_code=200, body=None):
         self.requests = []
+        self.paths = []
         self.timeouts = []
         self.status_code = status_code
         self.body = response_body() if body is None else body
 
     def __call__(self, request):
         self.requests.append(json.loads(request.content))
+        self.paths.append(request.url.path)
         self.timeouts.append(request.extensions["timeout"])
         return httpx.Response(self.status_code, json=self.body)
 
@@ -204,9 +210,14 @@ def embeddings_with(handler):
 def test_embeddings_are_returned_in_input_order_with_model_identity():
     provider = RecordingProvider(body=embedding_body((1.0, 0.0), (0.0, 1.0)))
     model = embeddings_with(provider)
-    assert model.embed(["first", "second"]) == ((1.0, 0.0), (0.0, 1.0))
-    sent = (provider.requests[0]["model"], provider.requests[0]["input"], model.identity)
-    assert sent == ("vendor/embed", ["first", "second"], "openrouter:vendor/embed")
+    assert model.embed(["first", "second"], "search_document") == ((1.0, 0.0), (0.0, 1.0))
+    sent = provider.requests[0]
+    assert (sent["model"], sent["input"], sent["input_type"], model.identity) == (
+        "vendor/embed",
+        ["first", "second"],
+        "search_document",
+        "openrouter:vendor/embed",
+    )
     model.close()
 
 
@@ -215,7 +226,7 @@ def test_embedding_count_mismatch_or_error_is_a_safe_failure():
     failing = embeddings_with(RecordingProvider(500, {"error": {"message": "private"}}))
     for model in (short, failing):
         with pytest.raises(ContextMeshError) as error:
-            model.embed(["a", "b"])
+            model.embed(["a", "b"], "search_query")
         assert error.value.code == "provider_unavailable"
         model.close()
 
@@ -223,7 +234,7 @@ def test_embedding_count_mismatch_or_error_is_a_safe_failure():
 def test_rejected_embedding_input_is_permanent_not_retryable():
     model = embeddings_with(RecordingProvider(400, {"error": {"message": "input too long"}}))
     with pytest.raises(ContextMeshError) as error:
-        model.embed(["oversized"])
+        model.embed(["oversized"], "search_document")
     assert (error.value.code, error.value.retryable) == ("embedding_input_rejected", False)
     model.close()
 
@@ -231,7 +242,68 @@ def test_rejected_embedding_input_is_permanent_not_retryable():
 def test_embeddings_without_credentials_are_not_configured():
     model = OpenRouterEmbeddingModel(api_key="", model="m", base_url="http://unused", timeout=1)
     with pytest.raises(ContextMeshError) as error:
-        model.embed(["text"])
+        model.embed(["text"], "search_query")
+    assert error.value.code == "provider_not_configured"
+
+
+def rerank_body(*results):
+    return {
+        "model": "rerank-fixture",
+        "results": [
+            {"index": index, "relevance_score": score, "document": {"text": "echo"}}
+            for index, score in results
+        ],
+        "usage": {"total_tokens": 4, "cost": 0.0},
+    }
+
+
+def reranker_with(handler, model="vendor/rerank"):
+    return OpenRouterRerankModel(
+        api_key="test-only",
+        model=model,
+        base_url="http://provider.test/v1",
+        timeout=10,
+        client=sdk(handler),
+    )
+
+
+def test_rerank_scores_return_in_input_order():
+    provider = RecordingProvider(body=rerank_body((1, 0.9), (0, 0.2)))
+    model = reranker_with(provider)
+    assert model.rerank("rollout?", ["lunch", "rollout"]) == (0.2, 0.9)
+    assert provider.paths == ["/v1/rerank"]
+    assert provider.requests == [
+        {"model": "vendor/rerank", "query": "rollout?", "documents": ["lunch", "rollout"]}
+    ]
+    model.close()
+
+
+@pytest.mark.parametrize(
+    "provider",
+    [
+        RecordingProvider(body=rerank_body((0, 0.9))),
+        RecordingProvider(body=rerank_body((0, 0.9), (0, 0.8))),
+        RecordingProvider(body=rerank_body((0, 0.9), (2, 0.8))),
+        RecordingProvider(body=rerank_body((0, 0.9), (1, "high"))),
+        RecordingProvider(body={"results": None}),
+        RecordingProvider(500, {"error": {"message": "private"}}),
+    ],
+    ids=["missing", "duplicate", "out-of-range", "non-numeric", "malformed", "error"],
+)
+def test_incomplete_or_failed_rerank_is_a_safe_failure(provider):
+    model = reranker_with(provider)
+    with pytest.raises(ContextMeshError) as error:
+        model.rerank("q", ["a", "b"])
+    assert error.value.code == "provider_unavailable"
+    model.close()
+
+
+@pytest.mark.parametrize(("key", "model"), [("", "vendor/rerank"), ("key", " ")])
+def test_rerank_without_credentials_or_model_is_not_configured(key, model):
+    reranker = OpenRouterRerankModel(api_key=key, model=model, base_url="http://unused", timeout=1)
+    assert (reranker.configured, reranker.client) == (False, None)
+    with pytest.raises(ContextMeshError) as error:
+        reranker.rerank("q", ["a"])
     assert error.value.code == "provider_not_configured"
 
 

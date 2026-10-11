@@ -1,5 +1,5 @@
-"""Model clients, all on OpenRouter: structured answers and embeddings through its
-OpenAI-compatible API, and its Decisions API for the route classifier.
+"""Model clients, all on OpenRouter: structured answers, embeddings, and reranking through
+its OpenAI-compatible API, and its Decisions API for the route classifier.
 
 No client retries on its own, every call has a wall-clock bound, and provider errors
 become safe ContextMeshError codes.
@@ -14,7 +14,14 @@ from math import isclose, isfinite
 import httpx
 from openai import BadRequestError, OpenAI, OpenAIError
 
-from app.services.models import ChoiceReply, ChoiceTask, StructuredReply, StructuredTask, Usage
+from app.services.models import (
+    ChoiceReply,
+    ChoiceTask,
+    InputType,
+    StructuredReply,
+    StructuredTask,
+    Usage,
+)
 from app.utils.errors import ContextMeshError
 
 FENCED = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
@@ -138,12 +145,17 @@ class OpenRouterEmbeddingModel:
         """Names the vector space; each identity gets its own vector collection."""
         return self._identity
 
-    def embed(self, texts: Sequence[str]) -> tuple[tuple[float, ...], ...]:
+    def embed(self, texts: Sequence[str], input_type: InputType) -> tuple[tuple[float, ...], ...]:
         if self.client is None:
             raise ContextMeshError("provider_not_configured")
         try:
             response = self.client.embeddings.create(
-                model=self.model, input=list(texts), encoding_format="float"
+                model=self.model,
+                input=list(texts),
+                encoding_format="float",
+                # Retrieval models such as Voyage's embed queries and documents
+                # differently; other models accept and ignore it.
+                extra_body={"input_type": input_type},
             )
         except BadRequestError:
             raise ContextMeshError("embedding_input_rejected") from None
@@ -157,6 +169,59 @@ class OpenRouterEmbeddingModel:
     def close(self) -> None:
         if self.client is not None:
             self.client.close()
+
+
+class OpenRouterRerankModel:
+    """The /rerank endpoint, which the SDK has no method for, through the SDK's client."""
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str,
+        base_url: str,
+        timeout: float,
+        client: OpenAI | None = None,
+    ):
+        self.model = model
+        self._configured = bool(api_key.strip() and model.strip())
+        self.client = client
+        if self._configured and client is None:
+            self.client = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout, max_retries=0)
+
+    @property
+    def configured(self) -> bool:
+        return self._configured
+
+    def rerank(self, query: str, documents: Sequence[str]) -> tuple[float, ...]:
+        if not self.configured:
+            raise ContextMeshError("provider_not_configured")
+        body = {"model": self.model, "query": query, "documents": list(documents)}
+        try:
+            payload = self.client.post("/rerank", body=body, cast_to=object)
+        except (OpenAIError, ValueError, httpx.HTTPError):
+            raise ContextMeshError("provider_unavailable") from None
+        return _relevance(payload, len(documents))
+
+    def close(self) -> None:
+        if self.client is not None:
+            self.client.close()
+
+
+def _relevance(payload: object, count: int) -> tuple[float, ...]:
+    """Scores back in input order; every document must be scored exactly once."""
+    scores: dict[int, float] = {}
+    try:
+        for result in payload["results"]:
+            index, score = result["index"], float(result["relevance_score"])
+            if not isinstance(index, int) or index in scores or not isfinite(score):
+                raise ValueError(index)
+            scores[index] = score
+    except (KeyError, TypeError, ValueError):
+        raise ContextMeshError("provider_unavailable") from None
+    if sorted(scores) != list(range(count)):
+        raise ContextMeshError("provider_unavailable")
+    return tuple(scores[index] for index in range(count))
 
 
 class OpenRouterDecisionModel:

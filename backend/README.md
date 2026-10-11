@@ -19,7 +19,7 @@ backend/
       models.py          #   the values every layer shares (sources, passages, answers…)
       chat.py            #   ask a question: replay or claim the turn, run agent, save
       sources.py         #   add sources, upload, delete, show evidence
-      retrieval.py       #   hybrid search + deterministic reranker
+      retrieval.py       #   hybrid search + rerank model (term-coverage fallback)
       indexing.py        #   worker loop, indexer, chunking, erasers
       crawler.py         #   bounded website crawl
       validation.py      #   input rules (messages, titles, uploads)
@@ -141,7 +141,7 @@ Scanned documents and images need OCR, which is not implemented; legacy binary
 Office formats are not supported. Crawls are bounded and sequential, with no
 scheduled re-crawl. Token counts are approximate; chunks are also bounded by
 characters.
-There is no streaming, model-based reranker, reindex endpoint, reconciliation job
+There is no streaming, reindex endpoint, reconciliation job
 for orphaned vectors, or evaluation harness yet. Ingestion mutations do not take
 an `Idempotency-Key`, listings are capped without cursors, and readiness does not
 check Qdrant. Changing the embedding model requires deleting and re-uploading

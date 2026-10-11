@@ -137,7 +137,7 @@ Only these have more than one implementation.
 | `Agent` | `services/agent/steps.py` | Every agent step and its budget |
 | `AgentWorkflow` | `services/agent/graph.py` | Runs the LangGraph graph, opens the trace |
 | `AgentState`, `AgentPolicy` | `services/agent/state.py` | Run state and server-owned limits |
-| `HybridRetriever` | `services/retrieval.py` | Typed queries to vector / keyword search, weighted RRF, coverage rerank |
+| `HybridRetriever` | `services/retrieval.py` | Typed queries to vector / keyword search, weighted RRF, rerank model (coverage fallback) |
 | `IngestionWorker` | `services/indexing.py` | Claims a job, runs its handler, records failures |
 | `DocumentIndexer`, `Eraser` | `services/indexing.py` | Index a version; clean up after deletes |
 | `SiteCrawler`, `Frontier`, `RobotsRules` | `services/crawler.py` | Bounded same-site crawl |

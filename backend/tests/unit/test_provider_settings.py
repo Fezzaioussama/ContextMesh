@@ -9,6 +9,7 @@ def test_openrouter_settings_keep_credential_model_and_destination_together():
         openrouter_api_key="router-key",
         openrouter_model="vendor/router-model",
         openrouter_embedding_model="vendor/router-embed",
+        openrouter_rerank_model="vendor/router-rerank",
         openrouter_base_url="https://openrouter.ai/api/v1",
     ).selected_model
     assert (
@@ -16,12 +17,14 @@ def test_openrouter_settings_keep_credential_model_and_destination_together():
         settings.api_key.get_secret_value(),
         settings.model,
         settings.embedding_model,
+        settings.rerank_model,
         settings.base_url,
     ) == (
         "openrouter",
         "router-key",
         "vendor/router-model",
         "vendor/router-embed",
+        "vendor/router-rerank",
         "https://openrouter.ai/api/v1",
     )
 
@@ -31,14 +34,26 @@ def test_default_chat_model_is_deepseek_flash(monkeypatch):
     assert Settings(_env_file=None).selected_model.model == "deepseek/deepseek-v4.1-flash"
 
 
+def test_default_retrieval_models_are_voyage(monkeypatch):
+    monkeypatch.delenv("OPENROUTER_EMBEDDING_MODEL", raising=False)
+    monkeypatch.delenv("OPENROUTER_RERANK_MODEL", raising=False)
+    selected = Settings(_env_file=None).selected_model
+    assert (selected.embedding_model, selected.rerank_model) == (
+        "voyageai/voyage-4-large",
+        "voyageai/rerank-3",
+    )
+
+
 def test_openrouter_environment_names_configure_the_server(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "router-key")
     monkeypatch.setenv("OPENROUTER_MODEL", "vendor/router-model")
+    monkeypatch.setenv("OPENROUTER_RERANK_MODEL", "vendor/router-rerank")
     monkeypatch.setenv("OPENROUTER_BASE_URL", "http://fixture.test/v1")
     settings = Settings(_env_file=None).selected_model
-    assert (settings.provider, settings.model, settings.base_url) == (
+    assert (settings.provider, settings.model, settings.rerank_model, settings.base_url) == (
         "openrouter",
         "vendor/router-model",
+        "vendor/router-rerank",
         "http://fixture.test/v1",
     )
     assert settings.api_key.get_secret_value() == "router-key"

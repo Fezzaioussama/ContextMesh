@@ -407,11 +407,25 @@ class ReasoningModel(Protocol):
     def complete(self, task: StructuredTask) -> StructuredReply: ...
 
 
+InputType = Literal["search_query", "search_document"]
+
+
 class EmbeddingModel(Protocol):
     @property
     def identity(self) -> str: ...
 
-    def embed(self, texts: Sequence[str]) -> tuple[tuple[float, ...], ...]: ...
+    def embed(
+        self, texts: Sequence[str], input_type: InputType
+    ) -> tuple[tuple[float, ...], ...]: ...
+
+
+class RerankModel(Protocol):
+    @property
+    def configured(self) -> bool: ...
+
+    def rerank(self, query: str, documents: Sequence[str]) -> tuple[float, ...]:
+        """One relevance score per document, in input order."""
+        ...
 
 
 class DecisionModel(Protocol):

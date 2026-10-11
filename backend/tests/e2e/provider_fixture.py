@@ -1,4 +1,5 @@
-"""Controllable loopback Responses and Embeddings endpoints used by the real adapters."""
+"""Controllable loopback Responses, Embeddings, and Rerank endpoints used by the real
+adapters."""
 
 import hashlib
 import json
@@ -19,6 +20,7 @@ class ProviderFixture:
     def __init__(self):
         self.requests = []
         self.embeddings = []
+        self.reranks = []
         self.failures_remaining = 0
         self.lock = threading.Lock()
 
@@ -34,6 +36,11 @@ class ProviderFixture:
         with self.lock:
             self.embeddings.append(payload)
             return 200, embedding_body(payload["input"])
+
+    def rerank(self, payload):
+        with self.lock:
+            self.reranks.append(payload)
+            return 200, rerank_body(payload["query"], payload["documents"])
 
     def tasks(self, name):
         return [request for request in self.requests if task_name(request) == name]
@@ -130,6 +137,18 @@ def embedding_body(texts):
     }
 
 
+def rerank_body(query, documents):
+    """Scores by the cosine of hashed word vectors, strongest first like the real API."""
+    target = hashed_vector(query)
+    scores = [sum(a * b for a, b in zip(target, hashed_vector(text))) for text in documents]
+    order = sorted(range(len(documents)), key=lambda index: -scores[index])
+    results = [
+        {"index": index, "relevance_score": scores[index], "document": {"text": documents[index]}}
+        for index in order
+    ]
+    return {"model": "fixture-rerank", "results": results}
+
+
 def hashed_vector(text):
     values = [0.0] * DIMENSIONS
     for word in WORD.findall(text.lower()):
@@ -142,7 +161,11 @@ def normalized(values):
     return [value / norm for value in values]
 
 
-ROUTES = {"/v1/responses": ProviderFixture.respond, "/v1/embeddings": ProviderFixture.embed}
+ROUTES = {
+    "/v1/responses": ProviderFixture.respond,
+    "/v1/embeddings": ProviderFixture.embed,
+    "/v1/rerank": ProviderFixture.rerank,
+}
 
 
 def handler_type(fixture):

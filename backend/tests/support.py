@@ -35,7 +35,7 @@ class HashEmbeddings:
         self.calls: list[tuple[str, ...]] = []
         self.failure: Exception | None = None
 
-    def embed(self, texts):
+    def embed(self, texts, input_type="search_document"):
         self.calls.append(tuple(texts))
         if self.failure is not None:
             raise self.failure
