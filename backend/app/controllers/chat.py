@@ -12,7 +12,7 @@ from app.controllers.http import Principal
 from app.controllers.sources import LocatorResponse
 from app.controllers.sources import Service as Sources
 from app.services.chat import ConversationService
-from app.services.models import Conversation, Message, Page, TurnResult
+from app.services.models import DEFAULT_TITLE, Conversation, Message, Page, TurnResult
 from app.services.validation import (
     MAX_MESSAGE_CHARS,
     MAX_SOURCE_FILTER,
@@ -31,7 +31,7 @@ Service = Annotated[ConversationService, Depends(conversation_service)]
 
 class CreateConversation(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    title: StrictStr = Field(default="New conversation", min_length=1, max_length=100)
+    title: StrictStr = Field(default=DEFAULT_TITLE, min_length=1, max_length=100)
 
     @field_validator("title")
     @classmethod

@@ -38,6 +38,7 @@ from app.data.db import (
     turns,
 )
 from app.services.models import (
+    DEFAULT_TITLE,
     WITHHELD_TEXT,
     AgentOutcome,
     Answer,
@@ -82,6 +83,20 @@ class ChatRepository:
                 )
             )
         return value
+
+    def rename_untitled(self, identity: Identity, conversation_id: UUID, title: str) -> None:
+        """Name a conversation that still has the default title; a chosen title stays."""
+        with self.engine.begin() as connection:
+            member_role(connection, identity)
+            connection.execute(
+                update(conversations)
+                .where(
+                    _owned(identity),
+                    conversations.c.id == conversation_id,
+                    conversations.c.title == DEFAULT_TITLE,
+                )
+                .values(title=title)
+            )
 
     def conversations(
         self, identity: Identity, limit: int, cursor: str | None

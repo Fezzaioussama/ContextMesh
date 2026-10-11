@@ -66,7 +66,10 @@ without their query string.
    (`POST /api/v1/assistant/conversations/{id}/messages`, `Idempotency-Key` header).
 2. `services/chat.py` `ConversationService.send`: a repeated key returns the saved
    answer; otherwise `ChatRepository` (`data/chat.py`) claims the turn, the agent
-   runs with no transaction open, and the answer and citations are saved.
+   runs with no transaction open, and the answer and citations are saved. On a
+   conversation's first question, the chat model names it in parallel
+   (`rename_untitled`); a title slower than 5 s after the answer falls back to the
+   question, and a title chosen at creation is never replaced.
 3. The agent (`services/agent/`) is one LangGraph run. **route** (Jev classifier)
    picks a path; uncertain or unavailable routing retrieves:
    - grounded: plan (standalone question, rewrites, keywords, hypothetical answer)

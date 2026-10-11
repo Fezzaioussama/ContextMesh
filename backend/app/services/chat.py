@@ -1,14 +1,19 @@
 """Conversations and grounded turns: validate, replay or claim the turn, run the
-bounded agent with no database transaction open, then save the answer."""
+bounded agent with no database transaction open, then save the answer. A conversation's
+first question also names it."""
 
+import json
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from uuid import UUID
 
 from app.data.chat import ChatRepository
 from app.data.retrieval import RetrievalRepository
 from app.services.agent.graph import AgentWorkflow
+from app.services.agent.prompts import TITLE, TITLE_SCHEMA
 from app.services.agent.state import AgentPolicy
 from app.services.models import (
+    DEFAULT_TITLE,
     CatalogSource,
     Conversation,
     Execution,
@@ -16,6 +21,7 @@ from app.services.models import (
     Message,
     Page,
     ReasoningModel,
+    StructuredTask,
     TurnInput,
     TurnResult,
 )
@@ -28,6 +34,11 @@ from app.services.validation import (
 )
 from app.utils.errors import ContextMeshError
 from app.utils.logging import flow_event, flow_scope
+
+TITLE_TIMEOUT_SECONDS = 20.0
+TITLE_GRACE_SECONDS = 5.0  # How long a finished answer waits for a slower title.
+TITLE_CHARS = 60
+TITLE_TRIM = " \"'“”‘’«».,:;!?"
 
 
 @dataclass(frozen=True)
@@ -115,10 +126,13 @@ class ConversationService:
         """Run the agent for a claimed turn; any failure releases the claim."""
         with flow_scope(turn_id=execution.turn_id):
             flow_event("ask_question", "turn_started")
+            pool = ThreadPoolExecutor(max_workers=1)
             try:
                 if not self._model.configured:
                     raise ContextMeshError("provider_not_configured")
                 question = execution.user_message.content
+                # The first question names the conversation while the agent works.
+                title = None if execution.history else pool.submit(self._title, question)
                 outcome = self._workflow.run(identity, question, execution.history, catalog)
                 result = self._repository.complete(identity, execution, outcome)
             except Exception as error:
@@ -126,6 +140,12 @@ class ConversationService:
                 self._repository.fail(identity, execution, code)
                 flow_event("ask_question", "failed", code=code)
                 raise
+            finally:
+                pool.shutdown(wait=False)
+            if title is not None:
+                self._repository.rename_untitled(
+                    identity, execution.conversation_id, _settled(title, question)
+                )
             flow_event(
                 "ask_question",
                 "answered",
@@ -134,3 +154,33 @@ class ConversationService:
                 tokens=outcome.usage.total,
             )
             return result
+
+    def _title(self, question: str) -> str:
+        """A short model-written name; the question itself when the model gives none."""
+        content = json.dumps({"message": question}, ensure_ascii=False)
+        task = StructuredTask(
+            "conversation_title", TITLE, content, TITLE_SCHEMA, TITLE_TIMEOUT_SECONDS
+        )
+        try:
+            proposed = self._model.complete(task).data.get("title")
+        except ContextMeshError:
+            proposed = None
+        return short_title(proposed) or short_title(question) or DEFAULT_TITLE
+
+
+def _settled(title: Future[str], question: str) -> str:
+    """The model's title if it arrives within the grace period; the question otherwise."""
+    try:
+        return title.result(timeout=TITLE_GRACE_SECONDS)
+    except TimeoutError:
+        return short_title(question) or DEFAULT_TITLE
+
+
+def short_title(text: object) -> str:
+    """One line without wrapping quotes or final punctuation, cut at a word boundary."""
+    if not isinstance(text, str):
+        return ""
+    value = " ".join(text.split()).strip(TITLE_TRIM)
+    if len(value) <= TITLE_CHARS:
+        return value
+    return value[:TITLE_CHARS].rsplit(" ", 1)[0].rstrip(TITLE_TRIM) + "…"

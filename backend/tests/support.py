@@ -101,6 +101,7 @@ DEFAULT_SCRIPT: dict[str, Callable[[dict], dict]] = {
     "evidence_assessment": sufficient,
     "grounded_answer": cite_first_passage,
     "claim_support": all_supported,
+    "conversation_title": lambda content: {"title": "Fixture title"},
 }
 
 

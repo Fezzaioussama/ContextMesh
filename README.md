@@ -202,7 +202,7 @@ baseline), then the chat model grades the strongest. Dependencies are locked in
 - Ingest individual public HTML pages supplied by the user.
 - Track ingestion progress, errors, retries, document versions, and deletion.
 - Combine vector and keyword results, rerank evidence, and build a bounded context.
-- Support conversational questions with source filters, citations, and explicit insufficient-evidence responses.
+- Support conversational questions with source filters, citations, and explicit insufficient-evidence responses. Each conversation keeps its own source selection; a new one asks whether to keep the current selection, and is named by the model after its first question.
 - Add bounded source selection and search expansion after establishing a conventional RAG baseline.
 - Include source ownership checks, retrieval isolation tests, and a reproducible evaluation dataset.
 

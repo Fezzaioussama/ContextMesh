@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../App";
 import { documentStatus } from "../features/sources/documentStatus";
@@ -10,8 +10,10 @@ import {
   groundedAnswer,
   handbook,
   indexJob,
+  first,
   json,
   message,
+  second,
   selectConversation,
   turn,
 } from "./fixtures";
@@ -268,3 +270,65 @@ function elementById(id: string): HTMLElement {
   if (element === null) throw new Error(`Missing element ${id}`);
   return element;
 }
+
+describe("sources per conversation", () => {
+  function renderWithSources(created: RequestInit[] = []) {
+    selectConversation(second.id);
+    const http = createHttp(async () => emptyHistory(), true, [handbook, decisions]);
+    vi.stubGlobal("fetch", async (input: string, init: RequestInit = {}) => {
+      if (input === "/api/v1/assistant/conversations" && init.method === "POST")
+        created.push(init);
+      return http(input, init);
+    });
+    render(<App />);
+  }
+
+  async function narrowToHandbook() {
+    await readyComposer();
+    fireEvent.click(await screen.findByText("Searching all 2 sources"));
+    fireEvent.click(screen.getByLabelText("Handbook"));
+    expect(screen.getByText("Searching 1 of 2 sources")).toBeTruthy();
+  }
+
+  function startNewConversation(choice: string) {
+    fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
+    const choices = screen.getByRole("group", { name: "Sources for the new conversation" });
+    fireEvent.click(within(choices).getByRole("button", { name: choice }));
+  }
+
+  it("asks before a new conversation, which can search all sources again", async () => {
+    const created: RequestInit[] = [];
+    renderWithSources(created);
+    await narrowToHandbook();
+    startNewConversation("Search all sources");
+    await waitFor(() =>
+      expect(localStorage.getItem("contextmesh.selected-conversation")).toBe(first.id),
+    );
+    expect(await screen.findByText("Searching all 2 sources")).toBeTruthy();
+    expect(JSON.parse(String(created[0].body))).toEqual({});
+  });
+
+  it("keeps the selected sources in the new conversation when asked to", async () => {
+    renderWithSources();
+    await narrowToHandbook();
+    startNewConversation("Keep the 1 selected source");
+    await waitFor(() =>
+      expect(localStorage.getItem("contextmesh.selected-conversation")).toBe(first.id),
+    );
+    expect(screen.getByText("Searching 1 of 2 sources")).toBeTruthy();
+    expect(localStorage.getItem(`contextmesh.scope.${first.id}`)).toBe(
+      JSON.stringify([handbook.id]),
+    );
+  });
+
+  it("restores each conversation's own sources when switching", async () => {
+    renderWithSources();
+    await narrowToHandbook();
+    fireEvent.click(screen.getByRole("button", { name: "Open conversation: Planning notes" }));
+    expect(await screen.findByText("Searching all 2 sources")).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open conversation: Another conversation" }),
+    );
+    expect(await screen.findByText("Searching 1 of 2 sources")).toBeTruthy();
+  });
+});

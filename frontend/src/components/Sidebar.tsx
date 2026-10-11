@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { Conversation } from "../api/contracts";
 import { ErrorNotice, Icon, Loading } from "./ui";
 
@@ -8,9 +9,11 @@ interface SidebarProps {
   error: string;
   hasMore: boolean;
   creating: boolean;
+  /** How many sources the open conversation is narrowed to; null when it searches all. */
+  narrowed: number | null;
   open: boolean;
   select: (id: string) => void;
-  create: () => void;
+  create: (keepScope: boolean) => void;
   more: () => void;
   refresh: () => void;
   close: () => void;
@@ -40,14 +43,11 @@ export function Sidebar(props: SidebarProps) {
           <Icon name="close" />
         </button>
       </div>
-      <button
-        className="new-conversation"
-        onClick={props.create}
-        disabled={props.creating}
-      >
-        <Icon name="plus" />
-        New conversation
-      </button>
+      <NewConversation
+        narrowed={props.narrowed}
+        creating={props.creating}
+        create={props.create}
+      />
       <div className="sidebar-section">
         <span>CONVERSATIONS</span>
         <button
@@ -79,6 +79,52 @@ export function Sidebar(props: SidebarProps) {
         <span className="local-badge">LOCAL</span>
       </div>
     </aside>
+  );
+}
+
+/** With a narrowed source selection, asks whether the new conversation keeps it. */
+function NewConversation({
+  narrowed,
+  creating,
+  create,
+}: Pick<SidebarProps, "narrowed" | "creating" | "create">) {
+  const [choosing, setChoosing] = useState(false);
+  const asking = choosing && narrowed !== null;
+  function start() {
+    if (narrowed === null) create(false);
+    else setChoosing((value) => !value);
+  }
+  function choose(keepScope: boolean) {
+    setChoosing(false);
+    create(keepScope);
+  }
+  return (
+    <div className="new-conversation-area">
+      <button
+        className="new-conversation"
+        onClick={start}
+        disabled={creating}
+        aria-expanded={narrowed === null ? undefined : asking}
+        aria-controls={narrowed === null ? undefined : "new-conversation-choice"}
+      >
+        <Icon name="plus" />
+        New conversation
+      </button>
+      {asking && (
+        <div
+          className="new-conversation-choice"
+          id="new-conversation-choice"
+          role="group"
+          aria-label="Sources for the new conversation"
+        >
+          <p>Sources for the new conversation</p>
+          <button onClick={() => choose(true)}>
+            Keep the {narrowed} selected {narrowed === 1 ? "source" : "sources"}
+          </button>
+          <button onClick={() => choose(false)}>Search all sources</button>
+        </div>
+      )}
+    </div>
   );
 }
 

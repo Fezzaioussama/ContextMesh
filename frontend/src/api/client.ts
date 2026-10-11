@@ -110,11 +110,9 @@ export function conversations(
   return request(`${assistant}/conversations?${query}`, { signal });
 }
 
-export function createConversation(
-  title: string,
-  signal: AbortSignal,
-): Promise<Conversation> {
-  return postJson(`${assistant}/conversations`, { title }, signal);
+/** Created untitled: the server names it after its first question. */
+export function createConversation(signal: AbortSignal): Promise<Conversation> {
+  return postJson(`${assistant}/conversations`, {}, signal);
 }
 
 /** Every message of a conversation, following page cursors to the end. */

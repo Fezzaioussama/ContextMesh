@@ -20,6 +20,7 @@ export const AGENT_NAME = "ContextMesh Agent";
 
 const selectionKey = "contextmesh.selected-conversation";
 const attemptKey = (id: string) => `contextmesh.turn.${id}`;
+const scopeKey = (id: string) => `contextmesh.scope.${id}`;
 
 function safely<T>(action: () => T, fallback: T): T {
   try {
@@ -35,6 +36,25 @@ export function readSelection(): string | null {
 
 export function saveSelection(id: string): void {
   safely(() => localStorage.setItem(selectionKey, id), undefined);
+}
+
+/** The sources a conversation searches; null (nothing saved) means every source. */
+export function readScope(id: string | null): string[] | null {
+  if (id === null) return null;
+  return safely(() => {
+    const stored = localStorage.getItem(scopeKey(id));
+    if (stored === null) return null;
+    const value: unknown = JSON.parse(stored);
+    const valid = Array.isArray(value) && value.every((item) => typeof item === "string");
+    return valid ? (value as string[]) : null;
+  }, null);
+}
+
+export function saveScope(id: string, scope: string[] | null): void {
+  safely(() => {
+    if (scope === null) localStorage.removeItem(scopeKey(id));
+    else localStorage.setItem(scopeKey(id), JSON.stringify(scope));
+  }, undefined);
 }
 
 /** An unsent or failed message, kept with its idempotency key so a retry is not duplicated. */
@@ -130,25 +150,27 @@ export function useConversations() {
   };
 }
 
+/** `keepScope` carries the current conversation's sources into the new one. */
 export function useCreateConversation(
-  created: (conversation: Conversation, draft: string) => void,
+  created: (conversation: Conversation, draft: string, keepScope: boolean) => void,
 ) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const active = useRef<AbortController | null>(null);
+  const last = useRef({ draft: "", keepScope: false });
 
   useEffect(() => () => active.current?.abort(), []);
 
-  async function create(draft: string) {
+  async function create(draft: string, keepScope = false) {
     if (active.current !== null) return;
+    last.current = { draft, keepScope };
     const controller = new AbortController();
     active.current = controller;
     setPending(true);
     setError("");
     try {
-      const title = draft.length === 0 ? "New conversation" : draft.slice(0, 100);
-      const result = await createConversation(title, controller.signal);
-      if (!controller.signal.aborted) created(result, draft);
+      const result = await createConversation(controller.signal);
+      if (!controller.signal.aborted) created(result, draft, keepScope);
     } catch (failure) {
       if (!controller.signal.aborted) setError(describeError(failure));
     } finally {
@@ -157,7 +179,8 @@ export function useCreateConversation(
     }
   }
 
-  return { pending, error, create };
+  const retry = () => create(last.current.draft, last.current.keepScope);
+  return { pending, error, create, retry };
 }
 
 export function useHistory(conversationId: string) {

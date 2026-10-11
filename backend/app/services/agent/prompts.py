@@ -77,6 +77,13 @@ SUPPORT = (
 )
 
 
+TITLE = (
+    "Name a conversation from its first user message. Return a short title of two to six "
+    "words, in the language of the message, that says what the user wants to know: sentence "
+    "case, no quotes, emoji, or final punctuation. " + UNTRUSTED
+)
+
+
 def _strings() -> dict:
     return {"type": "array", "items": {"type": "string"}}
 
@@ -133,6 +140,8 @@ ANSWER_SCHEMA = _object(
 )
 
 DIRECT_SCHEMA = _object({"answer": {"type": "string"}})
+
+TITLE_SCHEMA = _object({"title": {"type": "string"}})
 
 SUPPORT_SCHEMA = _object(
     {

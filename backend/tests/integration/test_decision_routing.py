@@ -45,5 +45,5 @@ def _assert_direct_response(response):
 
 def _assert_route_execution(response, reasoning, decisions):
     assert [item["stage"] for item in response.json()["trace"]] == ["route", "direct", "release"]
-    assert reasoning.names() == ["direct_answer"]
+    assert sorted(reasoning.names()) == ["conversation_title", "direct_answer"]
     assert len(decisions.tasks) == 1

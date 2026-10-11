@@ -76,6 +76,26 @@ def test_answer_cites_canonical_evidence_that_resolves(client, conversation_id, 
     )
 
 
+def titles(client):
+    return {
+        item["id"]: item["title"] for item in client.get(f"{ROOT}/conversations").json()["items"]
+    }
+
+
+def test_first_question_names_the_conversation_once(client, conversation_id, source_id, reasoning):
+    ask(client, conversation_id, "Which approach?")
+    reasoning.script["conversation_title"] = lambda content: {"title": "Another name"}
+    ask(client, conversation_id, "And why?")
+    assert titles(client)[conversation_id] == "Fixture title"
+    assert reasoning.contents("conversation_title") == [{"message": "Which approach?"}]
+
+
+def test_a_chosen_title_is_never_replaced(client, source_id):
+    conversation = client.post(f"{ROOT}/conversations", json={"title": "My notes"}).json()["id"]
+    ask(client, conversation, "Which approach?")
+    assert titles(client)[conversation] == "My notes"
+
+
 def test_replay_returns_saved_answer_without_new_model_calls(
     client, conversation_id, source_id, reasoning
 ):
@@ -172,7 +192,7 @@ def test_without_indexed_documents_the_answer_is_an_evidence_gap(
     create_source(client, "Empty")
     answer = ask(client, conversation_id, "Anything?").json()["assistant_message"]["answer"]
     assert (answer["status"], answer["citations"]) == ("insufficient_evidence", [])
-    assert reasoning.tasks == []
+    assert reasoning.names() == ["conversation_title"]  # Only naming; the agent never asks.
 
 
 def test_missing_provider_is_safe_and_does_not_fake_reply(client, conversation_id, reasoning):

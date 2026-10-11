@@ -89,6 +89,7 @@ TASKS = {
     "claim_support": lambda content: {
         "verdicts": [{"index": claim["index"], "supported": True} for claim in content["claims"]]
     },
+    "conversation_title": lambda content: {"title": "Fixture conversation"},
 }
 
 

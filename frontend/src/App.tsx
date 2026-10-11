@@ -7,7 +7,9 @@ import { ChatPanel, effectiveScope, Welcome } from "./features/chat/ChatPanel";
 import type { SearchScope } from "./features/chat/ChatPanel";
 import {
   AGENT_NAME,
+  readScope,
   readSelection,
+  saveScope,
   saveSelection,
   useConversations,
   useCreateConversation,
@@ -27,27 +29,40 @@ export function App() {
   const [initialDraft, setInitialDraft] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
-  const [scope, setScope] = useState<string[] | null>(null);
+  // Each conversation keeps its own sources; a new one starts with all unless kept.
+  const [scope, setScope] = useState(() => readScope(readSelection()));
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
   const closeSources = useCallback(() => setSourcesOpen(false), []);
   useDrawerAccessibility(sidebarOpen, closeSidebar, "conversation-sidebar");
   useDrawerAccessibility(sourcesOpen, closeSources, "sources-panel");
 
-  function select(id: string) {
+  function open(id: string, nextScope: string[] | null) {
     setSelected(id);
     saveSelection(id);
+    setScope(nextScope);
     setInitialDraft("");
     setSidebarOpen(false);
   }
 
-  function created(conversation: Conversation, draft: string) {
+  const select = (id: string) => open(id, readScope(id));
+
+  function changeScope(next: string[] | null) {
+    setScope(next);
+    if (selected !== null) saveScope(selected, next);
+  }
+
+  function created(conversation: Conversation, draft: string, keepScope: boolean) {
     conversations.insert(conversation);
-    select(conversation.id);
+    const next = keepScope ? scope : null;
+    saveScope(conversation.id, next);
+    open(conversation.id, next);
     setInitialDraft(draft);
   }
 
   const creation = useCreateConversation(created);
-  const newConversation = () => creation.create("");
+  const currentScope = effectiveScope(scope, sources.searchable);
+  const narrowed =
+    currentScope.ids === null || currentScope.unavailable ? null : currentScope.ids.length;
 
   return (
     <div className="app-shell">
@@ -58,9 +73,10 @@ export function App() {
         error={conversations.error}
         hasMore={conversations.cursor !== null}
         creating={creation.pending}
+        narrowed={narrowed}
         open={sidebarOpen}
         select={select}
-        create={newConversation}
+        create={(keepScope) => creation.create("", keepScope)}
         more={conversations.more}
         refresh={conversations.refresh}
         close={closeSidebar}
@@ -96,7 +112,7 @@ export function App() {
         <SourcesHint sources={sources} open={() => setSourcesOpen(true)} />
         <div className="workspace-feedback">
           <ErrorNotice message={metadata.error} retry={metadata.refresh} />
-          <ErrorNotice message={creation.error} retry={newConversation} />
+          <ErrorNotice message={creation.error} retry={creation.retry} />
         </div>
         <ActiveChat
           selected={selected}
@@ -106,8 +122,8 @@ export function App() {
           creating={creation.pending}
           refresh={conversations.refresh}
           sources={sources.searchable}
-          scope={effectiveScope(scope, sources.searchable)}
-          changeScope={setScope}
+          scope={currentScope}
+          changeScope={changeScope}
         />
       </main>
       <Backdrop open={sourcesOpen} close={closeSources} label="Close sources" />

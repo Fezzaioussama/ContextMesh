@@ -229,6 +229,9 @@ class RetrievalResult:
 
 # Answers
 
+# A conversation keeps this title until its first question names it.
+DEFAULT_TITLE = "New conversation"
+
 AnswerStatus = Literal["direct", "answered", "partial", "insufficient_evidence", "withheld"]
 WITHHELD_TEXT = "This answer is unavailable because evidence it relied on was removed."
 

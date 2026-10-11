@@ -91,13 +91,15 @@ button {
   letter-spacing: 1.25px;
   color: #7f949e;
 }
+.new-conversation-area {
+  margin: 35px 0 28px;
+}
 .new-conversation {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 9px;
   width: 100%;
-  margin: 35px 0 28px;
   padding: 12px 9px;
   font-size: 12px;
   font-weight: 550;
@@ -107,6 +109,34 @@ button {
   border-radius: 8px;
 }
 .new-conversation:hover {
+  background: #294748;
+}
+.new-conversation-choice {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 10px;
+  background: #17292f;
+  border: 1px solid #31524f;
+  border-radius: 8px;
+}
+.new-conversation-choice p {
+  margin: 0 0 2px;
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #879ba5;
+}
+.new-conversation-choice button {
+  padding: 8px 9px;
+  font-size: 11px;
+  text-align: left;
+  color: #d7efeb;
+  background: transparent;
+  border: 1px solid #31524f;
+  border-radius: 6px;
+}
+.new-conversation-choice button:hover {
   background: #294748;
 }
 .sidebar-section {
