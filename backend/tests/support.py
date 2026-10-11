@@ -58,12 +58,25 @@ def plan_all_sources(content: dict) -> dict:
     return {
         "standalone_question": content["question"],
         "source_ids": [source["id"] for source in content["sources"]],
-        "queries": [content["question"]],
+        "questions": [],
+        "keywords": [],
+        "hypothetical_answer": "",
     }
 
 
 def sufficient(content: dict) -> dict:
-    return {"sufficient": True, "gaps": [], "queries": [], "expand_source_ids": []}
+    return {
+        "sufficient": True,
+        "gaps": [],
+        "questions": [],
+        "keywords": [],
+        "expand_source_ids": [],
+    }
+
+
+def all_relevant(content: dict) -> dict:
+    """Equal top grades keep the retrieval order."""
+    return {"grades": [{"id": passage["id"], "relevance": 3} for passage in content["passages"]]}
 
 
 def cite_first_passage(content: dict) -> dict:
@@ -84,6 +97,7 @@ def all_supported(content: dict) -> dict:
 
 DEFAULT_SCRIPT: dict[str, Callable[[dict], dict]] = {
     "search_plan": plan_all_sources,
+    "passage_rerank": all_relevant,
     "evidence_assessment": sufficient,
     "grounded_answer": cite_first_passage,
     "claim_support": all_supported,

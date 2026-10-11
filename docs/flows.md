@@ -69,8 +69,10 @@ without their query string.
    runs with no transaction open, and the answer and citations are saved.
 3. The agent (`services/agent/`) is one LangGraph run. **route** (Jev classifier)
    picks a path; uncertain or unavailable routing retrieves:
-   - grounded: plan → retrieve (`services/retrieval.py`) → assess (may search
-     again) → generate → verify → repair (once) → release;
+   - grounded: plan (standalone question, rewrites, keywords, hypothetical answer)
+     → retrieve (`services/retrieval.py`: vector + keyword, weighted RRF) → rerank
+     (model grades passages) → assess (may search again) → generate → verify →
+     repair (once) → release;
    - direct (greetings, rewriting, general reasoning): direct → release, no
      citations.
 4. With `LANGSMITH_TRACING=true`, the turn is one LangSmith run `ask_question`

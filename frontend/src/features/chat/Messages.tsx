@@ -88,6 +88,7 @@ const stageLabels: Record<string, string> = {
   direct: "Answer",
   plan: "Plan",
   retrieve: "Search",
+  rerank: "Rerank",
   assess: "Assess",
   expand: "Expand",
   answer: "Draft",

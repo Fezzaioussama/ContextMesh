@@ -139,7 +139,9 @@ class TracedSearch:
             run_type="retriever",
             name="hybrid_search",
             process_inputs=lambda inputs: {
-                "queries": list(inputs["queries"]),
+                "questions": list(inputs["queries"].questions),
+                "keywords": list(inputs["queries"].keywords),
+                "hypothetical": inputs["queries"].hypothetical,
                 "source_ids": [str(source_id) for source_id in inputs["source_ids"]],
                 "round": inputs["round_number"],
             },

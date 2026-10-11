@@ -17,6 +17,7 @@ from app.services.models import (
     Message,
     Passage,
     RetrievalResult,
+    SearchQueries,
     Usage,
 )
 from app.utils.errors import ContextMeshError
@@ -107,7 +108,9 @@ def plan_only(source_id):
         return {
             "standalone_question": content["question"],
             "source_ids": [str(source_id)],
-            "queries": ["oidc"],
+            "questions": ["oidc"],
+            "keywords": [],
+            "hypothetical_answer": "",
         }
 
     return plan
@@ -135,10 +138,17 @@ def expanding_verdicts(target):
             {
                 "sufficient": False,
                 "gaps": ["rollout date"],
-                "queries": [],
+                "questions": [],
+                "keywords": [],
                 "expand_source_ids": [str(target)],
             },
-            {"sufficient": True, "gaps": [], "queries": [], "expand_source_ids": []},
+            {
+                "sufficient": True,
+                "gaps": [],
+                "questions": [],
+                "keywords": [],
+                "expand_source_ids": [],
+            },
         ]
     )
     return lambda content: next(verdicts)
@@ -148,8 +158,10 @@ EXPANSION_TRACE = [
     "route",
     "plan",
     "retrieve",
+    "rerank",
     "expand",
     "retrieve",
+    "rerank",
     "assess",
     "answer",
     "verify",
@@ -201,12 +213,15 @@ def test_planner_cannot_select_unknown_or_out_of_scope_sources():
     reasoning.script["search_plan"] = lambda content: {
         "standalone_question": content["question"],
         "source_ids": [str(foreign.id), "not-a-uuid"],
-        "queries": ["x"],
+        "questions": ["x"],
+        "keywords": [],
+        "hypothetical_answer": "",
     }
     reasoning.script["evidence_assessment"] = lambda content: {
         "sufficient": False,
         "gaps": [],
-        "queries": [],
+        "questions": [],
+        "keywords": [],
         "expand_source_ids": [str(foreign.id)],
     }
     run(reasoning, retriever, (allowed,))
@@ -226,7 +241,8 @@ def test_repeated_gaps_stop_at_the_round_budget_with_a_partial_answer():
     reasoning.script["evidence_assessment"] = lambda content: {
         "sufficient": False,
         "gaps": ["missing owner"],
-        "queries": [f"variant {next(counter)}"],
+        "questions": [],
+        "keywords": [f"variant {next(counter)}"],
         "expand_source_ids": [],
     }
     outcome = run(reasoning, retriever, (only,))
@@ -539,7 +555,8 @@ def test_malformed_structured_output_is_a_safe_model_failure():
     reasoning.script["evidence_assessment"] = lambda content: {
         "sufficient": "yes",
         "gaps": [],
-        "queries": [],
+        "questions": [],
+        "keywords": [],
         "expand_source_ids": [],
     }
     with pytest.raises(ContextMeshError) as failure:
@@ -553,6 +570,110 @@ def test_answer_generation_sees_passages_but_not_conversation_history():
     run(reasoning, SourceRetriever({only.id: [passage(only.id, "Fact.")]}), (only,))
     assert "conversation" in reasoning.contents("search_plan")[0]
     assert set(reasoning.contents("grounded_answer")[0]) == {"question", "passages"}
+
+
+def test_plan_searches_the_standalone_question_first_with_typed_rewrites():
+    only = source("Handbook")
+    retriever = SourceRetriever({only.id: [passage(only.id, "Fact.")]})
+    reasoning = ScriptedReasoning()
+    reasoning.script["search_plan"] = lambda content: {
+        "standalone_question": "When does the OIDC rollout start?",
+        "source_ids": [],
+        "questions": [
+            "when does the  OIDC rollout start?",
+            "OIDC launch date",
+            "SSO rollout schedule",
+            "Who owns the OIDC rollout?",
+            "one too many",
+        ],
+        "keywords": ["OIDC rollout", "SSO", "one too many"],
+        "hypothetical_answer": "The OIDC rollout starts in March.",
+    }
+    outcome = run(reasoning, retriever, (only,))
+    assert retriever.calls[0][1] == SearchQueries(
+        (
+            "When does the OIDC rollout start?",
+            "OIDC launch date",
+            "SSO rollout schedule",
+            "Who owns the OIDC rollout?",
+        ),
+        ("OIDC rollout", "SSO"),
+        "The OIDC rollout starts in March.",
+    )
+    assert outcome.trace[1].summary.endswith(
+        "4 questions, 2 keyword queries and a hypothetical answer."
+    )
+
+
+def graded_passages():
+    only = source("Handbook")
+    texts = ("Lunch is at noon.", "We chose OIDC.", "Rollout starts in March.")
+    retriever = SourceRetriever({only.id: [passage(only.id, text) for text in texts]})
+    reasoning = ScriptedReasoning()
+    reasoning.script["grounded_answer"] = cite_all
+    return only, retriever, reasoning
+
+
+def answered_from(reasoning):
+    return [item["text"] for item in reasoning.contents("grounded_answer")[0]["passages"]]
+
+
+def test_grading_drops_irrelevant_passages_and_reorders_the_rest():
+    only, retriever, reasoning = graded_passages()
+    reasoning.script["passage_rerank"] = lambda content: {
+        "grades": [
+            {"id": "E1", "relevance": 0},
+            {"id": "E2", "relevance": 2},
+            {"id": "E3", "relevance": 3},
+        ]
+    }
+    outcome = run(reasoning, retriever, (only,))
+    graded = next(stage for stage in outcome.trace if stage.stage == "rerank")
+    assert answered_from(reasoning) == ["Rollout starts in March.", "We chose OIDC."]
+    assert graded.summary == "Graded 3 passages: kept 2, dropped 1 as irrelevant."
+
+
+def test_grading_passages_sends_truncated_text():
+    only, retriever, reasoning = graded_passages()
+    run(reasoning, retriever, (only,), policy=AgentPolicy(rerank_text_chars=5))
+    sent = reasoning.contents("passage_rerank")[0]["passages"]
+    assert [item["text"] for item in sent] == ["Lunch", "We ch", "Rollo"]
+
+
+def unavailable_provider(content):
+    raise ContextMeshError("provider_unavailable")
+
+
+@pytest.mark.parametrize(
+    "grader",
+    [lambda content: {"grades": "all good"}, unavailable_provider],
+    ids=["malformed", "provider-failure"],
+)
+def test_failed_grading_keeps_the_retrieval_order(grader):
+    only, retriever, reasoning = graded_passages()
+    reasoning.script["passage_rerank"] = grader
+    outcome = run(reasoning, retriever, (only,))
+    graded = next(stage for stage in outcome.trace if stage.stage == "rerank")
+    assert answered_from(reasoning) == [
+        "Lunch is at noon.",
+        "We chose OIDC.",
+        "Rollout starts in March.",
+    ]
+    assert graded.summary == "Passage grading failed safely; kept the retrieval order."
+
+
+def test_grading_can_be_turned_off():
+    only, retriever, reasoning = graded_passages()
+    outcome = run(reasoning, retriever, (only,), policy=AgentPolicy(rerank=False))
+    assert "passage_rerank" not in reasoning.names()
+    assert (len(answered_from(reasoning)), outcome.answer.status) == (3, "answered")
+
+
+def test_grading_never_hides_a_budget_failure():
+    only, retriever, reasoning = graded_passages()
+    with pytest.raises(ContextMeshError) as failure:
+        run(reasoning, retriever, (only,), policy=AgentPolicy(max_total_tokens=15))
+    assert (failure.value.code, reasoning.names()) == ("agent_budget_exceeded", ["search_plan"])
 
 
 class EndlessSearch:

@@ -18,12 +18,15 @@ from app.services.agent.prompts import (
     DIRECT_SCHEMA,
     PLAN,
     PLAN_SCHEMA,
+    RERANK,
+    RERANK_SCHEMA,
     ROUTE,
     ROUTE_CRITERIA,
     SUPPORT,
     SUPPORT_SCHEMA,
 )
 from app.services.agent.state import (
+    TOP_GRADE,
     AgentPolicy,
     AgentState,
     Draft,
@@ -38,6 +41,7 @@ from app.services.agent.state import (
     normalized_query,
     objects,
     passages_payload,
+    regraded,
     request_payload,
     selected_context,
     string_list,
@@ -55,6 +59,7 @@ from app.services.models import (
     Identity,
     Message,
     ReasoningModel,
+    SearchQueries,
     StructuredReply,
     StructuredTask,
 )
@@ -63,6 +68,7 @@ from app.utils.errors import ContextMeshError
 from app.utils.logging import flow_event
 
 ANSWER_STATUSES = frozenset({"answered", "partial", "insufficient_evidence"})
+BUDGET_FAILURES = frozenset({"agent_deadline_exceeded", "agent_budget_exceeded"})
 NO_EVIDENCE_GAP = "No indexed passage in the selected sources answers this question."
 UNSPECIFIED_GAP = "The model judged the answer incomplete but did not name the missing detail."
 
@@ -175,28 +181,35 @@ class Agent:
     # Research
 
     def plan(self, state: AgentState) -> AgentState:
-        """Rewrite the question and pick sources and queries; unknown sources are dropped."""
+        """Rewrite the question into typed queries and pick sources; unknown sources are
+        dropped. The standalone question is always the first query."""
+        policy = self._policy
         content = {
             "question": state.request,
-            "conversation": conversation_payload(state.history, self._policy.history_messages),
+            "conversation": conversation_payload(state.history, policy.history_messages),
             "sources": catalog_payload(state.searchable),
         }
         reply = self._call(state, "search_plan", PLAN, content, PLAN_SCHEMA)
         question = text_field(reply.data, "standalone_question", 1000) or state.request
         chosen = known_sources(string_list(reply.data, "source_ids", 50, 64), state.searchable)
         sources = chosen or tuple(source.id for source in state.searchable)
-        queries = string_list(reply.data, "queries", self._policy.max_query_variants, 300)
-        queries = queries or (question,)
+        rewrites = string_list(reply.data, "questions", policy.max_questions, 300)
+        queries = SearchQueries(
+            _distinct((question, *rewrites))[: policy.max_questions],
+            string_list(reply.data, "keywords", policy.max_keyword_queries, 300),
+            text_field(reply.data, "hypothetical_answer", 1000),
+        )
         summary = (
             f"Selected {len(sources)} of {counted(len(state.searchable), 'searchable source')}"
-            f" and {counted(len(queries), 'search query', 'search queries')}."
+            f"; rewrote the question as {_described(queries)}."
         )
         return state.charged(reply.usage).traced(
             "plan", summary, question=question, selected=sources, queries=queries
         )
 
     def retrieve(self, state: AgentState) -> AgentState:
-        """One retrieval round over the selected, already authorized sources."""
+        """One retrieval round over the selected, already authorized sources. Its passages
+        wait in `candidates` for grading."""
         self._require_time(state)
         round_number = state.rounds + 1
         result = self._retriever.search(state.identity, state.selected, state.queries, round_number)
@@ -205,7 +218,7 @@ class Agent:
             names.append(f"{len(state.selected) - 3} more")
         summary = (
             f"Round {round_number}: searched {', '.join(names)} with "
-            f"{counted(len(state.queries), 'query', 'queries')}; "
+            f"{_described(state.queries)}; "
             f"{counted(len(result.evidence), 'passage')} passed access checks."
         )
         if not result.vector_available:
@@ -215,9 +228,49 @@ class Agent:
             summary,
             rounds=round_number,
             searched=state.searched | frozenset(state.selected),
-            asked=state.asked | {normalized_query(query) for query in state.queries},
-            evidence=merged_evidence(state.evidence, result.evidence, self._policy.max_evidence),
+            asked=state.asked | {normalized_query(query) for query in state.queries.texts},
+            candidates=result.evidence,
             consulted=state.consulted | {item.passage.document_id for item in result.evidence},
+        )
+
+    def rerank(self, state: AgentState) -> AgentState:
+        """Grade this round's passages, drop those judged irrelevant, and pool the strongest.
+        A disabled, skipped, or failed grading keeps the retrieval order."""
+        policy = self._policy
+        candidates, graded = state.candidates, state.candidates
+        reserve = policy.answer_reserve_seconds + policy.round_reserve_seconds
+        if not candidates:
+            summary = "No passages to grade."
+        elif not policy.rerank:
+            summary = "Passage grading is off; kept the retrieval order."
+        elif self._remaining(state) <= reserve:
+            summary = "Too little time left to grade passages; kept the retrieval order."
+        else:
+            content = {
+                "question": state.question,
+                "passages": passages_payload(candidates, policy.rerank_text_chars),
+            }
+            try:
+                reply = self._call(state, "passage_rerank", RERANK, content, RERANK_SCHEMA)
+                grades = _grades(objects(reply.data, "grades", len(candidates)))
+            except ContextMeshError as error:
+                if error.code in BUDGET_FAILURES:
+                    raise
+                summary = "Passage grading failed safely; kept the retrieval order."
+            else:
+                state = state.charged(reply.usage)
+                graded = regraded(candidates, grades, policy.rerank_weight)
+                dropped = len(candidates) - len(graded)
+                summary = (
+                    f"Graded {counted(len(candidates), 'passage')}: kept {len(graded)}, "
+                    f"dropped {dropped} as irrelevant."
+                )
+        kept = graded[: policy.max_reranked]
+        return state.traced(
+            "rerank",
+            summary,
+            candidates=(),
+            evidence=merged_evidence(state.evidence, kept, policy.max_evidence),
         )
 
     def assess(self, state: AgentState) -> AgentState:
@@ -243,8 +296,12 @@ class Agent:
         reply = self._call(state, "evidence_assessment", ASSESS, content, ASSESS_SCHEMA)
         sufficient = flag(reply.data, "sufficient")
         gaps = string_list(reply.data, "gaps", policy.max_gaps, 300)
-        proposed = string_list(reply.data, "queries", policy.max_query_variants, 300)
-        queries = tuple(query for query in proposed if normalized_query(query) not in state.asked)
+        questions = _unasked(
+            string_list(reply.data, "questions", policy.max_questions, 300), state.asked
+        )
+        keywords = _unasked(
+            string_list(reply.data, "keywords", policy.max_keyword_queries, 300), state.asked
+        )
         chosen = known_sources(
             string_list(reply.data, "expand_source_ids", 50, 64), state.searchable
         )
@@ -252,19 +309,20 @@ class Agent:
         state = state.charged(reply.usage)
         if sufficient:
             return state.traced("assess", "The passages cover the question.", ready=True, gaps=())
-        if not queries and not new_sources:
+        if not questions and not keywords and not new_sources:
             summary = "Evidence is incomplete and no new search strategy remains."
             return state.traced("assess", summary, ready=True, gaps=gaps)
-        if queries:  # New queries revisit searched sources too.
+        if questions or keywords:  # New queries revisit searched sources too.
             wanted = state.searched | frozenset(new_sources)
             sources = tuple(source.id for source in state.searchable if source.id in wanted)
+            queries = SearchQueries(questions, keywords)
         else:  # Repeated queries only run on new sources.
             sources = new_sources
-        queries = queries or state.queries
+            queries = state.queries
         missing = f"“{gaps[0][:120]}”" if gaps else "details"
         summary = (
             f"Missing {missing}; searching again with "
-            f"{counted(len(queries), 'query', 'queries')} across {counted(len(sources), 'source')}."
+            f"{_described(queries)} across {counted(len(sources), 'source')}."
         )
         return state.traced(
             "expand", summary, selected=sources, queries=queries, gaps=gaps, ready=False
@@ -378,6 +436,43 @@ def _draft(state: AgentState) -> Draft:
     if state.draft is None:
         raise RuntimeError("Verification requires a drafted answer.")
     return state.draft
+
+
+def _distinct(queries: tuple[str, ...]) -> tuple[str, ...]:
+    """First of each query that differs only by case or spacing."""
+    first: dict[str, str] = {}
+    for query in queries:
+        first.setdefault(normalized_query(query), query)
+    return tuple(first.values())
+
+
+def _unasked(queries: tuple[str, ...], asked: frozenset[str]) -> tuple[str, ...]:
+    return tuple(query for query in queries if normalized_query(query) not in asked)
+
+
+def _described(queries: SearchQueries) -> str:
+    """`2 questions, 1 keyword query and a hypothetical answer` for trace summaries."""
+    parts = []
+    if queries.questions:
+        parts.append(counted(len(queries.questions), "question"))
+    if queries.keywords:
+        parts.append(counted(len(queries.keywords), "keyword query", "keyword queries"))
+    if queries.hypothetical:
+        parts.append("a hypothetical answer")
+    if len(parts) < 2:
+        return "".join(parts) or "no queries"
+    return f"{', '.join(parts[:-1])} and {parts[-1]}"
+
+
+def _grades(items: tuple[Mapping[str, object], ...]) -> dict[str, int]:
+    """Passage label to grade; items with an unknown grade are ignored."""
+    grades: dict[str, int] = {}
+    for item in items:
+        label, grade = item.get("id"), item.get("relevance")
+        valid = isinstance(grade, int) and not isinstance(grade, bool)
+        if isinstance(label, str) and valid and 0 <= grade <= TOP_GRADE:
+            grades.setdefault(label.strip().upper(), grade)
+    return grades
 
 
 # Release: the final answer from supported claims and canonical evidence records

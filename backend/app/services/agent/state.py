@@ -6,16 +6,30 @@ from dataclasses import dataclass, field, replace
 from typing import Literal
 from uuid import UUID
 
-from app.services.models import CatalogSource, Evidence, Identity, Message, TraceStage, Usage
+from app.services.models import (
+    CatalogSource,
+    Evidence,
+    Identity,
+    Message,
+    SearchQueries,
+    TraceStage,
+    Usage,
+)
 from app.utils.errors import ContextMeshError
 
 Route = Literal["retrieve", "direct"]
+TOP_GRADE = 3
 
 
 @dataclass(frozen=True)
 class AgentPolicy:
     max_rounds: int = 3
-    max_query_variants: int = 2
+    max_questions: int = 4  # Natural-language queries per round, the standalone one included.
+    max_keyword_queries: int = 2
+    rerank: bool = True
+    max_reranked: int = 10  # Passages a round keeps after grading.
+    rerank_weight: float = 0.7  # Share of the score from the model's grade.
+    rerank_text_chars: int = 1000
     max_repairs: int = 1
     deadline_seconds: float = 60.0
     call_timeout_seconds: float = 45.0
@@ -60,10 +74,11 @@ class AgentState:
     direct_response: str = ""
     question: str = ""
     selected: tuple[UUID, ...] = ()
-    queries: tuple[str, ...] = ()
+    queries: SearchQueries = SearchQueries()
     searched: frozenset[UUID] = frozenset()
     asked: frozenset[str] = frozenset()
     rounds: int = 0
+    candidates: tuple[Evidence, ...] = ()  # This round's passages, waiting to be graded.
     evidence: tuple[Evidence, ...] = ()
     consulted: frozenset[UUID] = frozenset()
     gaps: tuple[str, ...] = ()
@@ -122,6 +137,22 @@ def merged_evidence(
     return tuple(sorted(best.values(), key=_strength))[:limit]
 
 
+def regraded(
+    candidates: tuple[Evidence, ...], grades: Mapping[str, int], weight: float
+) -> tuple[Evidence, ...]:
+    """Blend each passage's grade (keyed by its label) with its retrieval score, strongest
+    first. Passages graded 0 are dropped; an ungraded passage is kept with grade 0."""
+    kept = []
+    for label, item in labeled(candidates).items():
+        grade = grades.get(label)
+        if grade == 0:
+            continue
+        signal = (grade or 0) / TOP_GRADE
+        score = round(weight * signal + (1 - weight) * item.score, 6)
+        kept.append(replace(item, score=score))
+    return tuple(sorted(kept, key=_strength))
+
+
 def selected_context(evidence: tuple[Evidence, ...], policy: AgentPolicy) -> tuple[Evidence, ...]:
     """Prefer strong passages while capping how many come from one document."""
     taken: dict[UUID, int] = {}
@@ -143,14 +174,16 @@ def labeled(context: tuple[Evidence, ...]) -> dict[str, Evidence]:
     return {f"E{index}": item for index, item in enumerate(context, start=1)}
 
 
-def passages_payload(context: tuple[Evidence, ...]) -> list[dict[str, str]]:
+def passages_payload(
+    context: tuple[Evidence, ...], max_chars: int | None = None
+) -> list[dict[str, str]]:
     return [
         {
             "id": label,
             "source": item.passage.source_name,
             "title": item.passage.title,
             "section": " > ".join(item.passage.locator.heading_path),
-            "text": item.passage.text,
+            "text": item.passage.text[:max_chars],
         }
         for label, item in labeled(context).items()
     ]

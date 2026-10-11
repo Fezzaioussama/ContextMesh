@@ -32,15 +32,29 @@ PLAN = (
     "Rewrite the question as a standalone search question that resolves references to "
     "earlier turns; earlier assistant replies are context, not evidence. Choose source_ids "
     "only from the catalog: the sources most likely to hold the answer, or all of them when "
-    "unsure. Write one or two short, keyword-rich search queries. " + UNTRUSTED
+    "unsure. The standalone question is always searched; in questions, add up to three more "
+    "natural-language search questions that use different wording or synonyms, and, when "
+    "the question has several parts, one sub-question per part. In keywords, write one or "
+    "two short queries made of the exact names, terms, and identifiers a matching passage "
+    "would contain. In hypothetical_answer, write two to four sentences that a passage "
+    "answering the question might contain; plausible guesses are fine, because it is used "
+    "only to find similar passages and never as evidence. " + UNTRUSTED
 )
 
 ASSESS = (
     "You decide whether retrieved passages are sufficient to answer a question. Set "
     "sufficient to true only when the passages contain every fact a complete answer needs. "
-    "Otherwise list the specific missing facts in gaps, propose up to two new search queries "
-    "that could find them, and optionally choose ids from unsearched_sources in "
+    "Otherwise list the specific missing facts in gaps, propose new searches that could "
+    "find them (up to two natural-language questions and up to two short keyword queries "
+    "of exact terms), and optionally choose ids from unsearched_sources in "
     "expand_source_ids. " + UNTRUSTED
+)
+
+RERANK = (
+    "You grade how useful each retrieved passage is for answering a question. Give every "
+    "passage id exactly one grade: 3 when it directly states a fact the answer needs, 2 when "
+    "it holds closely related facts, 1 when it shares the topic but adds little, and 0 when "
+    "it is unrelated. Judge only the passage text, not its title alone. " + UNTRUSTED
 )
 
 ANSWER = (
@@ -77,15 +91,33 @@ def _object(properties: dict) -> dict:
 
 
 PLAN_SCHEMA = _object(
-    {"standalone_question": {"type": "string"}, "source_ids": _strings(), "queries": _strings()}
+    {
+        "standalone_question": {"type": "string"},
+        "source_ids": _strings(),
+        "questions": _strings(),
+        "keywords": _strings(),
+        "hypothetical_answer": {"type": "string"},
+    }
 )
 
 ASSESS_SCHEMA = _object(
     {
         "sufficient": {"type": "boolean"},
         "gaps": _strings(),
-        "queries": _strings(),
+        "questions": _strings(),
+        "keywords": _strings(),
         "expand_source_ids": _strings(),
+    }
+)
+
+RERANK_SCHEMA = _object(
+    {
+        "grades": {
+            "type": "array",
+            "items": _object(
+                {"id": {"type": "string"}, "relevance": {"type": "integer", "enum": [0, 1, 2, 3]}}
+            ),
+        }
     }
 )
 

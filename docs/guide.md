@@ -53,7 +53,7 @@ flowchart LR
   end
   subgraph research
     direction TB
-    p1["plan"] --> p2["retrieve"] --> p3["assess"]
+    p1["plan"] --> p2["retrieve"] --> p4["rerank"] --> p3["assess"]
     p3 -- "should_search" --> p2
   end
   subgraph answering
@@ -85,8 +85,9 @@ sequenceDiagram
   R-->>S: saved answer, or none
   S->>R: claim(key) → Execution
   S->>A: run(question, history, catalog)
-  A->>H: search(sources, queries)
-  H-->>A: Evidence
+  A->>H: search(sources, SearchQueries)
+  H-->>A: Evidence candidates
+  A->>A: rerank (model grades candidates)
   A-->>S: AgentOutcome
   S->>R: complete(execution, outcome)
   R-->>C: TurnResult
@@ -136,7 +137,7 @@ Only these have more than one implementation.
 | `Agent` | `services/agent/steps.py` | Every agent step and its budget |
 | `AgentWorkflow` | `services/agent/graph.py` | Runs the LangGraph graph, opens the trace |
 | `AgentState`, `AgentPolicy` | `services/agent/state.py` | Run state and server-owned limits |
-| `HybridRetriever` | `services/retrieval.py` | Vector + keyword search, fusion, rerank |
+| `HybridRetriever` | `services/retrieval.py` | Typed queries to vector / keyword search, weighted RRF, coverage rerank |
 | `IngestionWorker` | `services/indexing.py` | Claims a job, runs its handler, records failures |
 | `DocumentIndexer`, `Eraser` | `services/indexing.py` | Index a version; clean up after deletes |
 | `SiteCrawler`, `Frontier`, `RobotsRules` | `services/crawler.py` | Bounded same-site crawl |

@@ -51,7 +51,9 @@ def plan(content):
     return {
         "standalone_question": content["question"],
         "source_ids": [source["id"] for source in content["sources"]],
-        "queries": [content["question"]],
+        "questions": [],
+        "keywords": [],
+        "hypothetical_answer": "",
     }
 
 
@@ -66,10 +68,14 @@ def answer(content):
 
 TASKS = {
     "search_plan": plan,
+    "passage_rerank": lambda content: {
+        "grades": [{"id": passage["id"], "relevance": 3} for passage in content["passages"]]
+    },
     "evidence_assessment": lambda content: {
         "sufficient": True,
         "gaps": [],
-        "queries": [],
+        "questions": [],
+        "keywords": [],
         "expand_source_ids": [],
     },
     "grounded_answer": answer,

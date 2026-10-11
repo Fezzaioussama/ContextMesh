@@ -185,7 +185,7 @@ def metadata(service: Service, sources: Sources) -> AgentMetadata:
             max_history_messages=policy.history_messages,
             max_output_tokens=current.max_output_tokens,
             max_retrieval_rounds=policy.max_rounds,
-            max_query_variants=policy.max_query_variants,
+            max_query_variants=policy.max_questions + policy.max_keyword_queries,
             max_repairs=policy.max_repairs,
             deadline_seconds=policy.deadline_seconds,
             max_upload_bytes=sources.max_upload_bytes,

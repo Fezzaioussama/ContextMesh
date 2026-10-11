@@ -2,7 +2,7 @@
 groups each phase:
 
     routing    route → direct?
-    research   plan → retrieve ⟲ assess
+    research   plan → retrieve → rerank → assess ⟲ retrieve
     answering  generate → verify ⟲ repair
     release    always ends the run
 
@@ -65,9 +65,15 @@ def build_graph(agent: Agent):
     _branch(routing, "route", agent.should_answer_direct, "direct", END)
     routing.add_edge("direct", END)
 
-    research = _phase(("plan", agent.plan), ("retrieve", agent.retrieve), ("assess", agent.assess))
+    research = _phase(
+        ("plan", agent.plan),
+        ("retrieve", agent.retrieve),
+        ("rerank", agent.rerank),
+        ("assess", agent.assess),
+    )
     research.add_edge("plan", "retrieve")
-    research.add_edge("retrieve", "assess")
+    research.add_edge("retrieve", "rerank")
+    research.add_edge("rerank", "assess")
     _branch(research, "assess", agent.should_search, "retrieve", END)
 
     answering = _phase(

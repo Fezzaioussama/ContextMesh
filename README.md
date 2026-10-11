@@ -151,8 +151,8 @@ Today those sources are uploaded Markdown and text files. Web pages, PDF/Office 
 ### How a question is answered
 
 1. **Route** — optional Jev classification sends self-contained requests to a direct answer and everything else, including uncertain classifications, to retrieval.
-2. **Plan** — the model sees only the authorized source catalog and proposes sources and up to two queries; the server drops unknown IDs and never widens an explicit source filter.
-3. **Retrieve** — Qdrant vector search and PostgreSQL full-text search run in scope, ranks are fused (RRF), and only chunks from live, published document versions are hydrated.
+2. **Plan** — the model sees only the authorized source catalog and proposes sources plus a multi-query rewrite: the standalone question (always searched), up to three rephrasings or sub-questions, up to two keyword queries, and a hypothetical answer (HyDE) that is used only to find similar passages. The server drops unknown IDs and never widens an explicit source filter.
+3. **Retrieve** — questions and the hypothetical answer go to Qdrant vector search, keyword queries go to PostgreSQL full-text search, all in scope; ranks are fused with weighted RRF (the hypothetical answer counts half), and only chunks from live, published document versions are hydrated. A **rerank** step then has the model grade each candidate 0–3, drops passages graded irrelevant, and keeps the strongest; if grading fails, the retrieval order is kept.
 4. **Assess and expand** — the model judges coverage; missing facts trigger reformulated queries or additional sources, bounded to three rounds, a 60,000-token budget, and a 75-second deadline that also caps every model call's total duration.
 5. **Answer and verify** — claims may cite only supplied passages; a separate support check flags unsupported claims, which get one repair and are then removed. Direct answers carry no citations and are labeled separately.
 6. **Release** — citations are built from canonical records, re-checked for visibility, and saved; a saved grounded answer is withheld if any document it cited or consulted is later deleted.
@@ -193,9 +193,9 @@ flowchart LR
 | Chat, embeddings, reranking | Replaceable provider interfaces |
 | Development environment | Docker Compose, Python and JavaScript lockfiles |
 
-Unstructured parsing, a model-based reranker, and S3-compatible storage are not
-implemented yet: Markdown and text use built-in location-preserving parsers, and
-reranking uses a deterministic term-coverage baseline. Dependencies are locked in
+Unstructured parsing and S3-compatible storage are not implemented yet: Markdown and
+text use built-in location-preserving parsers. Reranking blends a deterministic
+term-coverage baseline with model-graded relevance. Dependencies are locked in
 `backend/uv.lock` and the root `package-lock.json`.
 
 ## First release scope

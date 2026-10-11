@@ -205,6 +205,22 @@ class Evidence:
 
 
 @dataclass(frozen=True)
+class SearchQueries:
+    """One question rewritten for each engine: natural-language questions for vector
+    search, exact-term keyword queries for full-text search, and a hypothetical answer
+    (HyDE) that is embedded to find similar passages but is never evidence."""
+
+    questions: tuple[str, ...] = ()
+    keywords: tuple[str, ...] = ()
+    hypothetical: str = ""
+
+    @property
+    def texts(self) -> tuple[str, ...]:
+        """The written queries, without the hypothetical answer."""
+        return tuple(dict.fromkeys((*self.questions, *self.keywords)))
+
+
+@dataclass(frozen=True)
 class RetrievalResult:
     evidence: tuple[Evidence, ...]
     candidates: int
