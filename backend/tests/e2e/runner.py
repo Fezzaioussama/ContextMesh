@@ -38,7 +38,6 @@ class Settings:
     frontend_port: int
     subject: str
     workspace_id: str
-    model_provider: str
 
     @property
     def api_url(self):
@@ -61,7 +60,6 @@ def arguments():
     )
     parser.add_argument("--api-port", type=int, default=18000)
     parser.add_argument("--frontend-port", type=int, default=18001)
-    parser.add_argument("--provider", choices=["openai", "openrouter"], default="openai")
     parsed = parser.parse_args()
     return Settings(
         parsed.database_url,
@@ -71,7 +69,6 @@ def arguments():
         parsed.frontend_port,
         f"e2e-{uuid4()}",
         str(uuid4()),
-        parsed.provider,
     )
 
 
@@ -157,7 +154,7 @@ def main():
         finally:
             browser.close()
     print(
-        f"PASS: real browser/API/worker/PostgreSQL/Qdrant/{settings.model_provider} smoke "
+        "PASS: real browser/API/worker/PostgreSQL/Qdrant/OpenRouter smoke "
         "(controlled provider fixture)"
     )
     print(

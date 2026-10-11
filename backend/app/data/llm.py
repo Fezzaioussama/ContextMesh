@@ -1,5 +1,5 @@
-"""Model clients: OpenAI-compatible structured answers and embeddings (OpenAI or
-OpenRouter), and OpenRouter's Decisions API for the route classifier.
+"""Model clients, all on OpenRouter: structured answers and embeddings through its
+OpenAI-compatible API, and its Decisions API for the route classifier.
 
 No client retries on its own, every call has a wall-clock bound, and provider errors
 become safe ContextMeshError codes.
@@ -21,7 +21,7 @@ FENCED = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 PROBABILITY_SUM_TOLERANCE = 1e-6  # Allows only ordinary response float-rounding drift.
 
 
-class OpenAIReasoningModel:
+class OpenRouterReasoningModel:
     """Responses API with a strict JSON schema; no tools."""
 
     def __init__(
@@ -117,11 +117,10 @@ def _usage(response) -> Usage:
     return Usage(response.usage.input_tokens, response.usage.output_tokens)
 
 
-class OpenAIEmbeddingModel:
+class OpenRouterEmbeddingModel:
     def __init__(
         self,
         *,
-        provider: str,
         api_key: str,
         model: str,
         base_url: str,
@@ -129,7 +128,7 @@ class OpenAIEmbeddingModel:
         client: OpenAI | None = None,
     ):
         self.model = model
-        self._identity = f"{provider}:{model}"
+        self._identity = f"openrouter:{model}"
         self.client = client
         if client is None and api_key.strip() and model.strip():
             self.client = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout, max_retries=0)

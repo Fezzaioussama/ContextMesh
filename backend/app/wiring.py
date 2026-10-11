@@ -19,7 +19,11 @@ from app.data.db import create_database_engine, database_ready, provision_identi
 from app.data.fetcher import SafeHttpFetcher
 from app.data.indexing import CrawlRepository, IndexingRepository
 from app.data.jobs import JobRepository
-from app.data.llm import OpenAIEmbeddingModel, OpenAIReasoningModel, OpenRouterDecisionModel
+from app.data.llm import (
+    OpenRouterDecisionModel,
+    OpenRouterEmbeddingModel,
+    OpenRouterReasoningModel,
+)
 from app.data.qdrant import QdrantVectorIndex
 from app.data.retrieval import RetrievalRepository
 from app.data.sources import SourceRepository
@@ -61,7 +65,7 @@ def create_services(config: Settings, resources: ExitStack) -> ExternalServices:
     provider = config.selected_model
     decision = config.selected_decision
     api_key = provider.api_key.get_secret_value()
-    reasoning = OpenAIReasoningModel(
+    reasoning = OpenRouterReasoningModel(
         api_key=api_key,
         model=provider.model,
         base_url=provider.base_url,
@@ -69,8 +73,7 @@ def create_services(config: Settings, resources: ExitStack) -> ExternalServices:
         max_output_tokens=config.max_output_tokens,
     )
     resources.callback(reasoning.close)
-    embeddings = OpenAIEmbeddingModel(
-        provider=provider.provider,
+    embeddings = OpenRouterEmbeddingModel(
         api_key=api_key,
         model=provider.embedding_model,
         base_url=provider.base_url,

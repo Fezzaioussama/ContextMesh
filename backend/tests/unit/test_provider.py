@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, Mock
 
 import httpx
 import pytest
-from app.data.llm import OpenAIEmbeddingModel, OpenAIReasoningModel
+from app.data.llm import OpenRouterEmbeddingModel, OpenRouterReasoningModel
 from app.services.models import StructuredTask, Usage
 from app.utils.errors import ContextMeshError
 from openai import OpenAI
@@ -67,7 +67,7 @@ def sdk(handler):
 
 
 def reasoning_with(handler):
-    return OpenAIReasoningModel(
+    return OpenRouterReasoningModel(
         api_key="test-only",
         model="fixture-model",
         base_url="http://provider.test/v1",
@@ -164,8 +164,12 @@ def test_timeout_is_safe_and_not_retried():
 
 
 def test_missing_provider_never_constructs_sdk_or_falls_back():
-    model = OpenAIReasoningModel(
-        api_key="", model="gpt-4.1-mini", base_url="http://unused", timeout=45, max_output_tokens=1
+    model = OpenRouterReasoningModel(
+        api_key="",
+        model="deepseek/deepseek-v4.1-flash",
+        base_url="http://unused",
+        timeout=45,
+        max_output_tokens=1,
     )
     with pytest.raises(ContextMeshError) as error:
         model.complete(TASK)
@@ -188,8 +192,7 @@ def embedding_body(*vectors):
 
 
 def embeddings_with(handler):
-    return OpenAIEmbeddingModel(
-        provider="openrouter",
+    return OpenRouterEmbeddingModel(
         api_key="test-only",
         model="vendor/embed",
         base_url="http://provider.test/v1",
@@ -226,9 +229,7 @@ def test_rejected_embedding_input_is_permanent_not_retryable():
 
 
 def test_embeddings_without_credentials_are_not_configured():
-    model = OpenAIEmbeddingModel(
-        provider="openai", api_key="", model="m", base_url="http://unused", timeout=1
-    )
+    model = OpenRouterEmbeddingModel(api_key="", model="m", base_url="http://unused", timeout=1)
     with pytest.raises(ContextMeshError) as error:
         model.embed(["text"])
     assert error.value.code == "provider_not_configured"
@@ -268,7 +269,7 @@ def _trickle(stream) -> bool:
 def test_total_call_time_is_bounded_even_when_bytes_keep_arriving():
     server = ThreadingHTTPServer(("127.0.0.1", 0), TricklingProvider)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    model = OpenAIReasoningModel(
+    model = OpenRouterReasoningModel(
         api_key="k",
         model="m",
         base_url=f"http://127.0.0.1:{server.server_port}/v1",
@@ -289,7 +290,7 @@ def test_a_stream_closed_by_the_wall_clock_limit_is_a_provider_failure():
     raw.parse.side_effect = httpx.StreamClosed()
     client = MagicMock()
     client.responses.with_streaming_response.create.return_value.__enter__.return_value = raw
-    model = OpenAIReasoningModel(
+    model = OpenRouterReasoningModel(
         api_key="k",
         model="m",
         base_url="http://unused/v1",

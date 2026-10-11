@@ -1,6 +1,5 @@
 PYTHON ?= .venv/bin/python
 RUFF ?= .venv/bin/ruff
-SMOKE_PROVIDER ?= openai
 
 .PHONY: npm-setup quality-setup quality quality-python quality-js
 
@@ -62,4 +61,4 @@ smoke-setup:
 	uv run --project backend --locked --with playwright==1.58.0 python -m playwright install chromium
 
 smoke:
-	uv run --project backend --locked --with playwright==1.58.0 python backend/tests/e2e/runner.py --provider $(SMOKE_PROVIDER)
+	uv run --project backend --locked --with playwright==1.58.0 python backend/tests/e2e/runner.py

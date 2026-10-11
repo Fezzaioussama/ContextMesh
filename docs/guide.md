@@ -19,7 +19,7 @@ flowchart LR
   end
   subgraph D["data/"]
     d1["ChatRepository · SourceRepository<br/>RetrievalRepository · JobRepository<br/>IndexingRepository · CrawlRepository"]
-    d2["QdrantVectorIndex · FilesystemBlobStore<br/>OpenAI*/OpenRouter* models · SafeHttpFetcher"]
+    d2["QdrantVectorIndex · FilesystemBlobStore<br/>OpenRouter* models · SafeHttpFetcher"]
   end
   C --> s1
   s1 --> s2 --> s3
@@ -123,8 +123,8 @@ Only these have more than one implementation.
 
 | Protocol | Implementations | Defined in |
 | --- | --- | --- |
-| `ReasoningModel` | `OpenAIReasoningModel`, `TracedReasoningModel` | `services/models.py` |
-| `EmbeddingModel` | `OpenAIEmbeddingModel`, `TracedEmbeddingModel` | `services/models.py` |
+| `ReasoningModel` | `OpenRouterReasoningModel`, `TracedReasoningModel` | `services/models.py` |
+| `EmbeddingModel` | `OpenRouterEmbeddingModel`, `TracedEmbeddingModel` | `services/models.py` |
 | `DecisionModel` | `OpenRouterDecisionModel`, `TracedDecisionModel` | `services/models.py` |
 | `JobHandler` | `DocumentIndexer`, `SiteCrawler`, `Eraser` | `services/indexing.py` |
 
@@ -148,7 +148,7 @@ Only these have more than one implementation.
 | `IndexingRepository`, `CrawlRepository` | `data/indexing.py` | Worker writes: publish, crawl results |
 | `QdrantVectorIndex` | `data/qdrant.py` | Vector index |
 | `FilesystemBlobStore` | `data/blobs.py` | Uploaded and crawled file bytes |
-| `OpenAIReasoningModel`, `OpenAIEmbeddingModel`, `OpenRouterDecisionModel` | `data/llm.py` | Model clients |
+| `OpenRouterReasoningModel`, `OpenRouterEmbeddingModel`, `OpenRouterDecisionModel` | `data/llm.py` | Model clients |
 | `SafeHttpFetcher` | `data/fetcher.py` | Web fetches to public addresses only |
 | `LangSmithTracing`, `Traced*` | `data/tracing.py` | Optional LangSmith tracing |
 | `ContextMeshError` | `utils/errors.py` | Error code → HTTP status and message |

@@ -79,7 +79,9 @@ def web(doubles):
 
 @pytest.fixture
 def settings(database_url, tmp_path):
-    return Settings(database_url=database_url, api_key="", blob_dir=tmp_path, _env_file=None)
+    return Settings(
+        database_url=database_url, openrouter_api_key="", blob_dir=tmp_path, _env_file=None
+    )
 
 
 @pytest.fixture

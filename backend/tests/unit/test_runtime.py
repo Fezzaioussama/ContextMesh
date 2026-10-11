@@ -26,7 +26,7 @@ def resources(monkeypatch):
     monkeypatch.setattr(wiring, "create_database_engine", Mock(return_value=engine))
     monkeypatch.setattr(wiring, "create_services", factory)
     monkeypatch.setattr(wiring, "provision_identity", Mock())
-    settings = Settings(_env_file=None, api_key="")
+    settings = Settings(_env_file=None, openrouter_api_key="")
     return settings, engine, model, factory
 
 
@@ -102,8 +102,8 @@ def test_production_external_services_own_decision_adapter(monkeypatch):
     vector_client = Mock()
     vectors = Mock()
     fetcher = Mock()
-    monkeypatch.setattr(wiring, "OpenAIReasoningModel", Mock(return_value=reasoning))
-    monkeypatch.setattr(wiring, "OpenAIEmbeddingModel", Mock(return_value=embeddings))
+    monkeypatch.setattr(wiring, "OpenRouterReasoningModel", Mock(return_value=reasoning))
+    monkeypatch.setattr(wiring, "OpenRouterEmbeddingModel", Mock(return_value=embeddings))
     monkeypatch.setattr(wiring, "OpenRouterDecisionModel", Mock(return_value=decisions))
     monkeypatch.setattr(wiring, "QdrantClient", Mock(return_value=vector_client))
     monkeypatch.setattr(wiring, "QdrantVectorIndex", Mock(return_value=vectors))

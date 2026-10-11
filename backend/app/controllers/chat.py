@@ -160,7 +160,7 @@ class AgentLimits(BaseModel):
 class AgentMetadata(BaseModel):
     name: str = "ContextMesh Agent"
     mode: Literal["agentic_rag"] = "agentic_rag"
-    provider: str = "openai"
+    provider: str = "openrouter"
     model: str
     embedding_model: str
     configured: bool

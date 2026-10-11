@@ -41,7 +41,7 @@ def assistant_for(engine, repository, workflow):
         RetrievalRepository(engine),
         workflow,
         ScriptedReasoning(),
-        provider="openai",
+        provider="openrouter",
         model_name="fixture",
         embedding_model="fixture",
         max_output_tokens=1024,

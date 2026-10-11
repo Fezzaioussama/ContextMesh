@@ -9,10 +9,9 @@ The default database is `contextmesh_test` on localhost port 55432. Alembic
 migrations run before the smoke. This suite never truncates tables and creates a
 unique server-side development identity and workspace per run.
 
-`make smoke SMOKE_PROVIDER=openrouter` exercises OpenRouter selection, model
-configuration, saved assistant message fields, and OpenRouter-specific setup
-guidance against the same controlled fixture. The default smoke selects OpenAI.
-Both runs override provider settings so local credentials never cause paid calls.
+The smoke exercises OpenRouter model configuration, saved assistant message
+fields, and OpenRouter setup guidance against a controlled fixture. It overrides
+provider settings so local credentials never cause paid calls.
 
 The runner starts a loopback OpenAI-compatible fixture (Responses and Embeddings
 APIs), a real FastAPI process, a real ingestion worker, and a real Vite process.
@@ -31,8 +30,7 @@ exclusion, expired execution recovery/fencing, and requester/workspace isolation
 
 Runtime logs plus desktop/mobile screenshots remain in a printed temporary
 directory outside the repository. A browser failure also writes `failure.png`.
-The runner accepts `--provider openai|openrouter`. Ports can be changed with
-`--api-port` and `--frontend-port`; the database URL can
+Ports can be changed with `--api-port` and `--frontend-port`; the database URL can
 be supplied with `--database-url`. The suite stops its API/frontend and fixture
 processes after both success and failure.
 

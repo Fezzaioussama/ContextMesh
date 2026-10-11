@@ -2,9 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../App";
-import { SetupBanner } from "../features/chat/AgentStatus";
 import {
-  agent,
   createHttp,
   emptyHistory,
   first,
@@ -14,17 +12,6 @@ import {
 } from "./fixtures";
 
 describe("assistant conversations", () => {
-  it("shows the OpenRouter credential name when that provider needs setup", () => {
-    render(
-      <SetupBanner
-        agent={{ ...agent, provider: "openrouter", configured: false }}
-        refresh={vi.fn()}
-      />,
-    );
-    expect(screen.getByText("OPENROUTER_API_KEY")).toBeTruthy();
-    expect(screen.queryByText("OPENAI_API_KEY")).toBeNull();
-  });
-
   it("sends a normalized message and renders returned HTML as inert text", async () => {
     selectConversation();
     const posts = vi.fn(async () => json(turn("<img src=x onerror=alert(1)>")));
@@ -89,7 +76,7 @@ describe("assistant conversations", () => {
     vi.stubGlobal("fetch", fetch);
     render(<App />);
     expect(await screen.findByText("Connect your model provider")).toBeTruthy();
-    expect(screen.getByText("OPENAI_API_KEY")).toBeTruthy();
+    expect(screen.getByText("OPENROUTER_API_KEY")).toBeTruthy();
     const input = await screen.findByLabelText("Message ContextMesh Agent");
     expect((input as HTMLTextAreaElement).disabled).toBe(true);
     expect(

@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 from uuid import UUID
 
 from pydantic import Field, SecretStr, field_validator, model_validator
@@ -45,20 +44,11 @@ class Settings(BaseSettings):
         default="postgresql+psycopg://contextmesh:contextmesh@127.0.0.1:55432/contextmesh",
         validation_alias="CONTEXTMESH_DATABASE_URL",
     )
-    api_key: SecretStr = Field(default=SecretStr(""), validation_alias="OPENAI_API_KEY")
-    model: str = Field(default="gpt-4.1-mini", validation_alias="OPENAI_MODEL")
-    embedding_model: str = Field(
-        default="text-embedding-3-small", validation_alias="OPENAI_EMBEDDING_MODEL"
-    )
-    base_url: str = Field(default="https://api.openai.com/v1", validation_alias="OPENAI_BASE_URL")
-    model_provider: Literal["openai", "openrouter"] = Field(
-        default="openai", validation_alias="CONTEXTMESH_MODEL_PROVIDER"
-    )
     openrouter_api_key: SecretStr = Field(
         default=SecretStr(""), validation_alias="OPENROUTER_API_KEY"
     )
     openrouter_model: str = Field(
-        default="openai/gpt-4.1-mini", validation_alias="OPENROUTER_MODEL"
+        default="deepseek/deepseek-v4.1-flash", validation_alias="OPENROUTER_MODEL"
     )
     openrouter_embedding_model: str = Field(
         default="openai/text-embedding-3-small", validation_alias="OPENROUTER_EMBEDDING_MODEL"
@@ -137,21 +127,18 @@ class Settings(BaseSettings):
 
     @property
     def selected_model(self) -> ModelProviderSettings:
-        if self.model_provider == "openrouter":
-            return ModelProviderSettings(
-                "openrouter",
-                self.openrouter_api_key,
-                self.openrouter_model,
-                self.openrouter_embedding_model,
-                self.openrouter_base_url,
-            )
+        """OpenRouter is the only model provider, for both chat and embeddings."""
         return ModelProviderSettings(
-            "openai", self.api_key, self.model, self.embedding_model, self.base_url
+            "openrouter",
+            self.openrouter_api_key,
+            self.openrouter_model,
+            self.openrouter_embedding_model,
+            self.openrouter_base_url,
         )
 
     @property
     def selected_decision(self) -> DecisionProviderSettings:
-        """Jev is OpenRouter-only and must never inherit the selected chat credential."""
+        """Jev shares the OpenRouter credential but stays off unless enabled."""
         return DecisionProviderSettings(
             self.decision_enabled,
             self.openrouter_api_key,

@@ -47,8 +47,6 @@ export function SetupBanner({
 }) {
   if (agent === null) return null;
   if (agent.configured) return null;
-  const apiKeyName =
-    agent.provider === "openrouter" ? "OPENROUTER_API_KEY" : "OPENAI_API_KEY";
   return (
     <div className="setup-banner" role="status">
       <div className="setup-symbol">
@@ -57,7 +55,7 @@ export function SetupBanner({
       <div>
         <strong>Connect your model provider</strong>
         <p>
-          Set <code>{apiKeyName}</code> in the server environment, then
+          Set <code>OPENROUTER_API_KEY</code> in the server environment, then
           restart the API.
         </p>
       </div>

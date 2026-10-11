@@ -23,7 +23,7 @@ ROOT = "/api/v1/assistant"
 def service_for(name: str) -> Mock:
     service = Mock(spec=ConversationService)
     service.metadata.return_value = AssistantMetadata(
-        "openai", name, "embed", True, 1024, AgentPolicy()
+        "openrouter", name, "embed", True, 1024, AgentPolicy()
     )
     now = datetime.now(UTC)
     service.create.return_value = Conversation(uuid4(), name, now, now)

@@ -11,9 +11,9 @@ import type {
 export const agent: AgentMetadata = {
   name: "ContextMesh Agent",
   mode: "agentic_rag",
-  provider: "openai",
-  model: "gpt-4.1-mini",
-  embedding_model: "text-embedding-3-small",
+  provider: "openrouter",
+  model: "deepseek/deepseek-v4.1-flash",
+  embedding_model: "openai/text-embedding-3-small",
   configured: true,
   retrieval_enabled: true,
   supported_media_types: [".md", ".pdf", ".docx", ".txt"],

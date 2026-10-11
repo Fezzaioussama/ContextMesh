@@ -97,20 +97,14 @@ def api_environment(settings, provider_url, configured=True):
         CONTEXTMESH_BLOB_DIR=str(settings.blob_dir),
         CONTEXTMESH_DEV_SUBJECT=settings.subject,
         CONTEXTMESH_DEV_WORKSPACE_ID=settings.workspace_id,
-        CONTEXTMESH_MODEL_PROVIDER=settings.model_provider,
-        OPENAI_API_KEY="fixture-key",
-        OPENAI_MODEL="gpt-4.1-mini",
-        OPENAI_EMBEDDING_MODEL="fixture-embedding",
-        OPENAI_BASE_URL=provider_url,
         OPENROUTER_API_KEY="router-fixture-key",
-        OPENROUTER_MODEL="openai/gpt-4.1-mini",
+        OPENROUTER_MODEL="deepseek/deepseek-v4.1-flash",
         OPENROUTER_EMBEDDING_MODEL="fixture/embedding",
         OPENROUTER_BASE_URL=provider_url,
         CONTEXTMESH_DECISION_ENABLED="false",
         CONTEXTMESH_ALLOWED_ORIGINS=json.dumps([settings.frontend_url]),
     )
     if not configured:
-        environment["OPENAI_API_KEY"] = ""
         environment["OPENROUTER_API_KEY"] = ""
     return environment
 

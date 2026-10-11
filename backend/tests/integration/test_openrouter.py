@@ -84,8 +84,6 @@ def router_settings(database_url, tmp_path, key="router-fixture-key"):
         _env_file=None,
         database_url=database_url,
         blob_dir=tmp_path,
-        model_provider="openrouter",
-        api_key="unused-direct-key",
         openrouter_api_key=key,
         openrouter_model="vendor/fixture-model",
         openrouter_embedding_model="vendor/embed",
@@ -108,7 +106,7 @@ def test_openrouter_indexes_and_answers_with_selected_settings(
         "openrouter",
         "vendor/embed",
     )
-    assert "router-fixture-key" not in metadata.text and "unused-direct-key" not in metadata.text
+    assert "router-fixture-key" not in metadata.text
     assert answer["assistant_message"]["answer"]["status"] == "answered"
     assert_routing(transport, settings)
 

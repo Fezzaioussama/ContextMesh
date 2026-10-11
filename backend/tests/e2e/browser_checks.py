@@ -138,11 +138,4 @@ def verify_ui_missing_configuration(page, settings):
     open_app(page, settings)
     expect(page.get_by_text("Connect your model provider", exact=True)).to_be_visible()
     expect(page.get_by_role("button", name="Send message", exact=True)).to_be_disabled()
-    verify_provider_setup(page, settings.model_provider)
-
-
-def verify_provider_setup(page, provider):
-    key_name = "OPENAI_API_KEY"
-    if provider == "openrouter":
-        key_name = "OPENROUTER_API_KEY"
-    expect(page.get_by_text(key_name, exact=True)).to_be_visible()
+    expect(page.get_by_text("OPENROUTER_API_KEY", exact=True)).to_be_visible()

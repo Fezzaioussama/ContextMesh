@@ -52,13 +52,13 @@ site; unchanged pages are skipped, and pages that disappeared are retired only w
 the crawl completed without limits or transient errors. API documentation is at
 [http://localhost:8000/docs](http://localhost:8000/docs).
 
-The selected provider's key is used for both the reasoning model and embeddings.
-For OpenRouter, set these server-only values in `.env`, then run `make dev` again:
+OpenRouter is the only model provider; its key is used for the reasoning model,
+embeddings, and the optional Jev classifier. Set these server-only values in `.env`,
+then run `make dev` again:
 
 ```dotenv
-CONTEXTMESH_MODEL_PROVIDER=openrouter
 OPENROUTER_API_KEY=your-openrouter-key
-OPENROUTER_MODEL=openai/gpt-4.1-mini
+OPENROUTER_MODEL=deepseek/deepseek-v4.1-flash
 OPENROUTER_EMBEDDING_MODEL=openai/text-embedding-3-small
 CONTEXTMESH_DECISION_ENABLED=true
 CONTEXTMESH_DECISION_MODEL=typesafe/jev-1.13
@@ -71,19 +71,15 @@ current, private, or source-specific facts, or whose topic an indexed source cov
 continue through the grounded RAG workflow; greetings, rewriting, creative work,
 and other self-contained requests go directly to the chat model without searching
 sources. Unavailable or low-confidence decisions conservatively fall back to
-retrieval. Jev uses the server-side `OPENROUTER_API_KEY`, even when the main chat
-provider is OpenAI.
+retrieval. Jev uses the same server-side `OPENROUTER_API_KEY`.
 
 Reasoning models (for example DeepSeek) spend hidden reasoning tokens inside the
 output budget — measured at up to several thousand per agent step — so keep
 `CONTEXTMESH_MAX_OUTPUT_TOKENS` at 8192 (the maximum is 16384; it is a ceiling,
 not a charge). If a reply
 runs out of budget, the API returns `model_output_limit` rather than a partial
-answer. For direct OpenAI access, set `CONTEXTMESH_MODEL_PROVIDER=openai`,
-`OPENAI_API_KEY`, `OPENAI_MODEL`, and optionally `OPENAI_EMBEDDING_MODEL`
-(default `text-embedding-3-small`). Each embedding model gets its own Qdrant
-collection. After changing the embedding model, delete existing documents (or
-their source) and upload them again: re-uploading unchanged files is idempotent
+answer. Each embedding model gets its own Qdrant collection. After changing the
+embedding model, delete existing documents (or their source) and upload them again: re-uploading unchanged files is idempotent
 and does not re-index them, so until then those documents are found by keyword
 search only. Credentials stay on
 the server; without them the UI shows setup instructions and never invents replies.
@@ -114,7 +110,6 @@ the module layout, agent workflow, and data model. The UI is in [frontend](front
 make app-test
 make smoke-setup
 make smoke
-make smoke SMOKE_PROVIDER=openrouter
 ```
 
 Integration and browser checks use a **separate disposable database** and a

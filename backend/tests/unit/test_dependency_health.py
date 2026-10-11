@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 def test_unavailable_database_keeps_liveness_but_readiness_and_writes_fail_safely():
     settings = Settings(
         database_url="postgresql+psycopg://secret:private@127.0.0.1:1/missing",
-        api_key="",
+        openrouter_api_key="",
         _env_file=None,
     )
     with TestClient(create_app(settings)) as client:

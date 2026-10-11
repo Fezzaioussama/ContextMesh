@@ -91,7 +91,9 @@ def no_environment_tracing(monkeypatch):
 
 
 def workflow(reasoning, tracing=None):
-    model = TracedReasoningModel(reasoning, provider="openai", model="gpt-test")
+    model = TracedReasoningModel(
+        reasoning, provider="openrouter", model="deepseek/deepseek-v4.1-flash"
+    )
     agent = Agent(model, TracedSearch(OneSourceSearch()), clock=lambda: 0.0)
     return AgentWorkflow(agent, tracing)
 
