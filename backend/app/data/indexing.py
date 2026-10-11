@@ -10,9 +10,9 @@ from uuid import UUID, uuid4
 from sqlalchemy import Connection, Engine, RowMapping, select, update
 from sqlalchemy.dialects.postgresql import insert
 
-from app.data.db import chunks, document_versions, documents, index_generations, sources
+from app.data.db import chunks, document_versions, documents, index_generations, jobs, sources
 from app.data.jobs import enqueue, fenced, finished, require_lease
-from app.data.sources import record_version
+from app.data.sources import INDEX_JOB, record_version
 from app.services.models import ChunkDraft, ClaimedJob, IndexTarget, UploadSpec, WebsiteTarget
 
 
@@ -55,6 +55,48 @@ class IndexingRepository:
             row["media_type"],
             row["title"],
         )
+
+    def queue_stale(self, signature: str) -> int:
+        """Queue indexing for each live document whose published index was built by
+        another pipeline, unless its latest version is already queued or running. The
+        old index stays searchable until the new one publishes. Returns how many."""
+        pending = (
+            select(jobs.c.id)
+            .where(
+                jobs.c.document_version_id == documents.c.latest_version_id,
+                jobs.c.kind == INDEX_JOB,
+                jobs.c.status.in_(("queued", "running")),
+            )
+            .exists()
+        )
+        query = (
+            select(
+                documents.c.workspace_id,
+                documents.c.source_id,
+                documents.c.id,
+                documents.c.latest_version_id,
+            )
+            .join(index_generations, index_generations.c.id == documents.c.active_generation_id)
+            .join(sources, sources.c.id == documents.c.source_id)
+            .where(
+                documents.c.deleted_at.is_(None),
+                sources.c.deleted_at.is_(None),
+                index_generations.c.pipeline_signature != signature,
+                ~pending,
+            )
+        )
+        with self._engine.begin() as connection:
+            rows = connection.execute(query).mappings().all()
+            for row in rows:
+                enqueue(
+                    connection,
+                    workspace_id=row["workspace_id"],
+                    kind=INDEX_JOB,
+                    source_id=row["source_id"],
+                    document_id=row["id"],
+                    version_id=row["latest_version_id"],
+                )
+        return len(rows)
 
     def stage(
         self,

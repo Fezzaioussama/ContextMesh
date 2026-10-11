@@ -144,5 +144,5 @@ characters.
 There is no streaming, reindex endpoint, reconciliation job
 for orphaned vectors, or evaluation harness yet. Ingestion mutations do not take
 an `Idempotency-Key`, listings are capped without cursors, and readiness does not
-check Qdrant. Changing the embedding model requires deleting and re-uploading
-documents. The fixed development identity is for local use only.
+check Qdrant. When the embedding model, parser, or chunking changes, the worker
+re-indexes existing documents on startup; the old model's vectors are left behind. The fixed development identity is for local use only.

@@ -2,6 +2,7 @@
 
 import time
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -9,11 +10,15 @@ import pytest
 from app.data.db import documents, index_generations, jobs, sources
 from app.data.indexing import IndexingRepository
 from app.data.jobs import JobRepository
+from app.data.qdrant import QdrantVectorIndex
 from app.data.retrieval import RetrievalRepository
+from app.services.indexing import queue_reindex
 from app.services.models import ChunkDraft, Locator
 from app.utils.errors import ContextMeshError, LeaseLost
+from app.wiring import build_worker, collection_name
+from qdrant_client import QdrantClient
 from sqlalchemy import select, update
-from support import create_source, drain, upload
+from support import HashEmbeddings, create_source, drain, upload
 from support import documents as listed_documents
 
 pytestmark = pytest.mark.integration
@@ -246,3 +251,37 @@ def test_expired_job_out_of_attempts_fails_terminally(client, engine):
     assert queue.claim("worker-b") is None
     row = job_row(engine, receipt["job_id"])
     assert (row["status"], row["safe_error_code"]) == ("failed", "attempts_exhausted")
+
+
+class NextModelEmbeddings(HashEmbeddings):
+    identity = "test:hashed-words-next"
+
+
+def test_a_new_embedding_model_reindexes_documents_without_a_reupload(
+    client, worker, engine, settings, identity, services
+):
+    source_id = create_source(client)
+    document_id = upload(client, source_id, "policy.md", V1).json()["document"]["id"]
+    drain(worker)
+    before = active_generation(engine, document_id)
+    embeddings = NextModelEmbeddings()
+    vectors = QdrantVectorIndex(QdrantClient(":memory:"), collection_name(embeddings.identity))
+    upgraded = replace(services, embeddings=embeddings, vectors=vectors)
+    started = datetime.now(UTC)
+    store = IndexingRepository(engine)
+    queued = (queue_reindex(store, embeddings) > 0, queue_reindex(store, embeddings))
+    with engine.begin() as connection:  # Leave other tests' documents to their own runs.
+        connection.execute(
+            update(jobs)
+            .where(
+                jobs.c.created_at >= started,
+                jobs.c.workspace_id != identity.workspace_id,
+                jobs.c.status == "queued",
+            )
+            .values(status="cancelled")
+        )
+    drain(build_worker(engine, settings, upgraded))
+    after = active_generation(engine, document_id)
+    assert queued == (True, 0)  # A document with a queued job is not queued twice.
+    assert generations(engine, document_id) == [(before, "superseded"), (after, "published")]
+    assert vectors.count_generation(after) > 0

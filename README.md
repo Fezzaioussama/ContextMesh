@@ -1,19 +1,28 @@
-# ContextMesh
+<p align="center">
+  <img src="docs/assets/contextmesh-mark.svg" width="128" height="128" alt="ContextMesh — connected knowledge nodes forming a mesh">
+</p>
 
-**Agentic Knowledge Retrieval Across Any Source**
+<h1 align="center">ContextMesh</h1>
 
-An extensible Agentic RAG platform for conversational search across documents, websites and enterprise data sources.
+<p align="center"><strong>Agentic knowledge retrieval across your documents and websites.</strong></p>
 
-**Project status:** the first agentic retrieval slice works end to end. Upload
-documents (PDF, Word, PowerPoint, Excel, HTML, Markdown, text, data and code files)
-or crawl a website; a separate worker parses, chunks, embeds, and publishes them. The **ContextMesh Agent** plans which sources to search, runs
-hybrid retrieval, expands or reformulates the search when evidence is missing, and
-returns claims with verified citations — or an explicit evidence gap. OCR for
-scanned documents, streaming, and the evaluation benchmark remain planned.
+<p align="center">
+  <img src="https://img.shields.io/badge/architecture-modular_monolith-101c22" alt="Architecture: modular monolith">
+  <img src="https://img.shields.io/badge/API-FastAPI-168278" alt="API: FastAPI">
+  <img src="https://img.shields.io/badge/UI-React_%2B_TypeScript-168278" alt="UI: React and TypeScript">
+  <img src="https://img.shields.io/badge/search-PostgreSQL_%2B_Qdrant-168278" alt="Search: PostgreSQL and Qdrant">
+</p>
 
-Suggested GitHub repository name: `context-mesh`.
+ContextMesh is an extensible Agentic RAG platform for conversational search. It
+ingests files or bounded website crawls, combines vector and keyword retrieval,
+and returns evidence-backed claims with canonical citations. When the available
+sources do not support an answer, it reports the evidence gap instead of guessing.
 
-## Run it
+> **Project status:** the first agentic retrieval slice works end to end. OCR for
+> scanned documents, response streaming, enterprise connectors, and the evaluation
+> benchmark remain planned. See [current limits](#current-limits-and-roadmap).
+
+## Quick start
 
 Install Docker with Compose, then run from the repository root:
 
@@ -21,39 +30,129 @@ Install Docker with Compose, then run from the repository root:
 make dev
 ```
 
-This creates `.env` from [.env.example](.env.example) only if it does not already
-exist, applies database migrations, and starts the frontend, API, ingestion worker,
-PostgreSQL, and Qdrant. Open [http://localhost:5173](http://localhost:5173), choose
-**Sources**, and create either a **Files** source (then upload documents) or a
-**Website** source (give a start URL; it is crawled immediately). When documents show
-**Ready**, ask a question.
+This creates `.env` from [.env.example](.env.example) only when one does not
+already exist, applies database migrations, and starts the frontend, API,
+ingestion worker, PostgreSQL, and Qdrant.
 
-### What you can add
+1. Open [http://localhost:5173](http://localhost:5173).
+2. Choose **Sources** and create a **Files** or **Website** source.
+3. Upload documents, or provide a website start URL for an immediate crawl.
+4. When the documents show **Ready**, ask a question.
 
-| Kind | Formats | Citations point to |
+The API documentation is available at
+[http://localhost:8000/docs](http://localhost:8000/docs). Model-backed answers
+require the [OpenRouter configuration](#model-configuration) below; without it,
+the UI shows setup instructions and never invents replies.
+
+## What it does
+
+- **Ingests diverse knowledge:** text-bearing PDF, modern Office, HTML,
+  Markdown, text, data, code, and bounded website crawls.
+- **Searches with evidence:** Qdrant vector search and PostgreSQL full-text
+  search are fused, reranked, and hydrated only from live published versions.
+- **Researches within bounds:** the agent selects authorized sources, rewrites
+  queries, expands incomplete searches, and stops at fixed round, token, and time
+  budgets.
+- **Validates every grounded answer:** claims may cite only supplied passages;
+  unsupported claims get one repair attempt and are then removed.
+- **Keeps citations canonical:** saved citations are re-checked for visibility,
+  and answers are withheld after a cited or consulted document is deleted.
+- **Preserves conversation scope:** Each conversation keeps its own source
+  selection; a new one asks whether to keep the current selection, and is named
+  by the model after its first question.
+
+### Supported sources
+
+| Kind | Formats | Citation location |
 | --- | --- | --- |
-| Documents | PDF (with a text layer), Word `.docx`, PowerPoint `.pptx`, Excel `.xlsx` | page, heading path, slide, or sheet |
-| Web and markup | HTML `.html`/`.htm`, Markdown `.md` | heading path and source lines |
-| Text, data, code | `.txt`, `.csv`, `.json`, `.yaml`, `.xml`, `.log`, `.rst`, `.sql`, and common code files | source lines |
-| Websites | A start URL; pages under the same path are crawled | the page URL and heading |
+| Documents | PDF with a text layer, Word `.docx`, PowerPoint `.pptx`, Excel `.xlsx` | Page, heading path, slide, or sheet |
+| Web and markup | HTML `.html`/`.htm`, Markdown `.md` | Heading path and source lines |
+| Text, data, and code | `.txt`, `.csv`, `.json`, `.yaml`, `.xml`, `.log`, `.rst`, `.sql`, and common code files | Source lines |
+| Websites | A start URL; pages below the same path are crawled | Page URL and heading |
 
-Scanned PDFs without a text layer are reported as **OCR required**; legacy `.doc`,
-`.ppt`, and `.xls` files and images are not supported. Uploads are limited to 20 MB
-by default (`CONTEXTMESH_MAX_UPLOAD_BYTES`). Office files are checked for
-decompression bombs before they are opened.
+Scanned PDFs without a text layer are reported as **OCR required**. Legacy
+`.doc`, `.ppt`, and `.xls` files and images are not supported. Uploads are
+limited to 20 MB by default (`CONTEXTMESH_MAX_UPLOAD_BYTES`), and Office files
+are checked for decompression bombs before they are opened.
 
-Website crawls stay on the start URL's scheme, host, and directory, respect
-`robots.txt`, follow links up to `CONTEXTMESH_CRAWL_MAX_DEPTH` (default 2) and at most
-`CONTEXTMESH_CRAWL_MAX_PAGES` pages (default 50), and fetch only HTML, text, Markdown,
-and PDF. Every connection — including each redirect — is checked at connect time:
-private, loopback, link-local, and cloud-metadata addresses and non-web ports are
-refused, so a crawl cannot reach internal services. **Crawl again** re-fetches the
-site; unchanged pages are skipped, and pages that disappeared are retired only when
-the crawl completed without limits or transient errors. API documentation is at
-[http://localhost:8000/docs](http://localhost:8000/docs).
+## How a question becomes an answer
 
-OpenRouter is the only model provider; its key is used for the reasoning model,
-embeddings, reranking, and the optional Jev classifier. Set these server-only values in `.env`,
+1. **Route** — optional Jev classification sends self-contained requests to a
+   direct answer. Source-specific, current, private, and uncertain requests take
+   the grounded path; unavailable or low-confidence decisions also fall back to
+   retrieval.
+2. **Plan** — the model sees only the authorized source catalog and proposes
+   sources plus the standalone question, up to three rephrasings or
+   sub-questions, up to two keyword queries, and a hypothetical answer used only
+   to find similar passages. Unknown IDs are dropped, and an explicit source
+   filter is never widened.
+3. **Retrieve and rerank** — question variants use Qdrant vector search; keyword
+   variants use PostgreSQL full-text search. Weighted reciprocal-rank fusion
+   combines them; the hypothetical answer carries half weight. Questions are
+   embedded as queries, while passages and the hypothetical answer are embedded
+   as documents. A rerank model scores canonical hydrated candidates, and the
+   chat model grades the strongest passages from 0–3. If model grading fails,
+   retrieval order is preserved; if vector search fails, keyword search remains.
+4. **Assess and expand** — missing facts can trigger another search or additional
+   in-scope sources, bounded to three rounds, a 60,000-token budget, and a
+   75-second deadline that also caps model-call duration.
+5. **Answer and verify** — grounded claims can cite only supplied passages. A
+   separate support check flags unsupported claims, which receive one repair and
+   are then removed. Direct answers are explicitly citation-free.
+6. **Release** — canonical citations and the validated answer are saved. An
+   idempotency key replays the saved turn instead of running it again.
+
+The interface also shows which sources were searched and why another retrieval
+round ran. Try asking: **“What did we decide about the authentication
+architecture?”**
+
+## Architecture
+
+ContextMesh is a modular monolith with a FastAPI API and a separate ingestion
+worker. Both processes share one Python package, while ingestion and querying
+keep independent execution paths. PostgreSQL is canonical; Qdrant is a
+rebuildable vector projection.
+
+```mermaid
+flowchart LR
+    User[React UI] --> API[FastAPI API]
+    Files[Files and websites] --> API
+    API --> Jobs[(PostgreSQL + jobs)]
+    Jobs --> Worker[Ingestion worker]
+    Worker --> Blob[Raw files]
+    Worker --> Q[(Qdrant)]
+    API --> Agent[Bounded LangGraph agent]
+    Agent --> Jobs
+    Agent --> Q
+    Agent --> Models[OpenRouter models]
+    Agent --> Answer[Validated answer + citations]
+    Answer --> User
+```
+
+The backend follows `controllers → services → data`; `wiring.py` is the only
+place that chooses concrete classes. LangGraph only sequences agent steps, and
+the frontend consumes typed HTTP contracts rather than backend internals.
+
+| Responsibility | Current choice |
+| --- | --- |
+| UI | React, TypeScript, Vite |
+| API and use cases | Python, FastAPI |
+| Agent orchestration and optional tracing | LangGraph; LangSmith when enabled |
+| Canonical state and keyword retrieval | PostgreSQL, SQLAlchemy, Alembic |
+| Vector retrieval | Qdrant |
+| Raw document storage | Local filesystem adapter |
+| Model provider | OpenRouter for reasoning, embeddings, reranking, and optional Jev routing |
+| Development | Docker Compose with Python and JavaScript lockfiles |
+
+Dependencies are locked in `backend/uv.lock` and the root `package-lock.json`.
+For file-by-file flow traces, see [docs/flows.md](docs/flows.md). For backend
+boundaries and the data model, see [backend/README.md](backend/README.md).
+
+## Configuration and operations
+
+### Model configuration
+
+OpenRouter is the only model provider. Set these server-only values in `.env`,
 then run `make dev` again:
 
 ```dotenv
@@ -66,32 +165,40 @@ CONTEXTMESH_DECISION_MODEL=typesafe/jev-1.13
 CONTEXTMESH_MAX_OUTPUT_TOKENS=8192
 ```
 
-With decision routing enabled, Jev classifies each turn before retrieval, seeing
-the names and descriptions of your indexed sources. Questions that need indexed,
-current, private, or source-specific facts, or whose topic an indexed source covers,
-continue through the grounded RAG workflow; greetings, rewriting, creative work,
-and other self-contained requests go directly to the chat model without searching
-sources. Unavailable or low-confidence decisions conservatively fall back to
-retrieval. Jev uses the same server-side `OPENROUTER_API_KEY`.
+With decision routing enabled, Jev sees the names and descriptions of indexed
+sources and classifies each turn before retrieval. It uses the same server-side
+`OPENROUTER_API_KEY`.
 
-Reasoning models (for example DeepSeek) spend hidden reasoning tokens inside the
-output budget — measured at up to several thousand per agent step — so keep
-`CONTEXTMESH_MAX_OUTPUT_TOKENS` at 8192 (the maximum is 16384; it is a ceiling,
-not a charge). If a reply
-runs out of budget, the API returns `model_output_limit` rather than a partial
-answer. Each embedding model gets its own Qdrant collection. After changing the
-embedding model, delete existing documents (or their source) and upload them again: re-uploading unchanged files is idempotent
-and does not re-index them, so until then those documents are found by keyword
-search only. The rerank model can change freely; set `OPENROUTER_RERANK_MODEL=` (empty)
-to rank by query-term coverage instead. Credentials stay on
-the server; without them the UI shows setup instructions and never invents replies.
+Optional LangSmith tracing is off by default because traces contain full prompts,
+passages, and answers. Setting `LANGSMITH_TRACING=true` requires
+`LANGSMITH_API_KEY`; startup fails instead of silently enabling incomplete
+tracing when the key is absent.
 
-`make stop` stops the containers and keeps the PostgreSQL, Qdrant, and upload
-volumes. Only localhost ports are published: frontend `5173`, API `8000`,
-PostgreSQL `55432`, Qdrant `6333`. The local development identity is not suitable
-for shared hosting.
+Reasoning models can spend several thousand hidden reasoning tokens per agent
+step, so keep `CONTEXTMESH_MAX_OUTPUT_TOKENS` at 8192. The maximum is 16384; it
+is a ceiling, not a charge. Exhausting it returns `model_output_limit`, not a
+partial answer.
 
-For development with hot reload, install Python 3.12+, uv, and Node.js 24+:
+Each embedding model has its own Qdrant collection. After changing it, restart the
+worker (`make dev` does): it re-indexes existing documents on startup, and each
+stays keyword-only until its new index is published. The rerank model can change freely. Set `OPENROUTER_RERANK_MODEL=` to use
+deterministic query-term coverage instead.
+
+### Website crawl safeguards
+
+Crawls remain on the start URL's scheme, host, and directory, respect
+`robots.txt`, and follow links up to `CONTEXTMESH_CRAWL_MAX_DEPTH` (default 2)
+and `CONTEXTMESH_CRAWL_MAX_PAGES` (default 50). They fetch only HTML, text,
+Markdown, and PDF.
+
+Every connection, including redirects, is checked at connect time. Private,
+loopback, link-local, cloud-metadata addresses, and non-web ports are refused.
+**Crawl again** re-fetches the site; unchanged pages are skipped, and missing
+pages are retired only after a crawl finishes without limits or transient errors.
+
+### Local development
+
+For hot reload, install Python 3.12+, uv, and Node.js 24+:
 
 ```bash
 make app-setup
@@ -103,10 +210,15 @@ make worker-dev
 make frontend-dev
 ```
 
-Backend code and its Dockerfile are in [backend](backend); its README describes
-the module layout, agent workflow, and data model. The UI is in [frontend](frontend).
+Backend code and its Dockerfile are in [backend](backend). The UI is in
+[frontend](frontend).
 
-## Verify the implementation
+`make stop` stops the containers while retaining PostgreSQL, Qdrant, and upload
+volumes. Only localhost ports are published: frontend `5173`, API `8000`,
+PostgreSQL `55432`, and Qdrant `6333`. The fixed local development identity is
+not suitable for shared hosting.
+
+## Verification
 
 ```bash
 make app-test
@@ -125,120 +237,76 @@ make app-test
 make smoke
 ```
 
-Backend integration tests run against real PostgreSQL with an in-memory Qdrant;
-Qdrant server tests run when `CONTEXTMESH_TEST_QDRANT_URL` is set. The browser smoke
-runs the real frontend, API, worker, PostgreSQL, and Qdrant against a controlled
-local provider fixture (Responses and Embeddings APIs). It never contacts a paid
-model, so it establishes integration behavior, not answer quality. Application CI
-runs the same checks with its own PostgreSQL and Qdrant services.
+Backend integration tests use real PostgreSQL and an in-memory Qdrant. Qdrant
+server tests run when `CONTEXTMESH_TEST_QDRANT_URL` is set. The browser smoke
+runs the frontend, API, worker, PostgreSQL, and Qdrant against a controlled local
+Responses and Embeddings fixture. It does not contact a paid model, so it proves
+integration behavior, not answer quality. Application CI uses the same checks
+with its own PostgreSQL and Qdrant services.
 
-On Linux distributions not recognized by the pinned Playwright browser installer,
-use `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 make smoke-setup` for the
-Ubuntu-compatible Chromium build. The runtime still needs Chromium's system
-libraries; CI installs them with Playwright's `--with-deps` option.
+On Linux distributions not recognized by the pinned Playwright installer, use:
 
-## The experience
-
-Ask: **“What did we decide about the authentication architecture?”**
-
-ContextMesh selects relevant sources, searches for evidence, expands its search when evidence is missing, and returns an answer with citations. Each answer shows which sources were searched and why another retrieval round ran. If the indexed sources cannot support an answer, the system reports the gap instead of guessing.
-
-Today those sources are uploaded Markdown and text files. Web pages, PDF/Office documents, GitHub, Notion, Slack, and other enterprise connectors follow in later milestones.
-
-### How a question is answered
-
-1. **Route** — optional Jev classification sends self-contained requests to a direct answer and everything else, including uncertain classifications, to retrieval.
-2. **Plan** — the model sees only the authorized source catalog and proposes sources plus a multi-query rewrite: the standalone question (always searched), up to three rephrasings or sub-questions, up to two keyword queries, and a hypothetical answer (HyDE) that is used only to find similar passages. The server drops unknown IDs and never widens an explicit source filter.
-3. **Retrieve** — questions and the hypothetical answer go to Qdrant vector search, keyword queries go to PostgreSQL full-text search, all in scope; ranks are fused with weighted RRF (the hypothetical answer counts half), and only chunks from live, published document versions are hydrated and scored by the rerank model (Voyage `rerank-3`; query-term coverage if it is off or fails). Questions are embedded as queries and passages and the hypothetical answer as documents. A **rerank** step then has the chat model grade each candidate 0–3, drops passages graded irrelevant, and keeps the strongest; if grading fails, the retrieval order is kept.
-4. **Assess and expand** — the model judges coverage; missing facts trigger reformulated queries or additional sources, bounded to three rounds, a 60,000-token budget, and a 75-second deadline that also caps every model call's total duration.
-5. **Answer and verify** — claims may cite only supplied passages; a separate support check flags unsupported claims, which get one repair and are then removed. Direct answers carry no citations and are labeled separately.
-6. **Release** — citations are built from canonical records, re-checked for visibility, and saved; a saved grounded answer is withheld if any document it cited or consulted is later deleted.
-
-## Proposed architecture
-
-A modular monolith with Clean/Hexagonal boundaries, a FastAPI API, and a separate ingestion worker. Both processes share one Python package; ingestion and querying have independent execution paths.
-
-```mermaid
-flowchart LR
-    Sources[Files and web pages] --> Worker[Ingestion worker]
-    Worker --> Blob[Raw document storage]
-    Worker --> PG[(PostgreSQL)]
-    Worker --> Q[(Qdrant)]
-    UI[React interface] --> API[FastAPI]
-    API --> Jobs[Durable ingestion jobs]
-    Jobs --> Worker
-    Jobs -. stored in .-> PG
-    API --> Agent[LangGraph retrieval workflow]
-    Agent --> PG
-    Agent --> Q
-    Agent --> Model[Model provider]
-    Agent --> Answer[Validated answer and citations]
-    Answer --> UI
+```bash
+PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 make smoke-setup
 ```
 
-| Responsibility | Initial choice |
-| --- | --- |
-| UI | React, TypeScript, Vite |
-| API and use cases | Python, FastAPI |
-| Agent orchestration | LangGraph |
-| Agent tracing (opt-in) | LangSmith |
-| Metadata, authorization, chat, jobs | PostgreSQL, SQLAlchemy, Alembic |
-| Vector retrieval | Qdrant |
-| Keyword retrieval | PostgreSQL full-text search |
-| Complex document parsing | Unstructured behind a parser interface |
-| Raw document storage | Local filesystem adapter; S3-compatible adapter later |
-| Chat, embeddings, reranking | Replaceable provider interfaces |
-| Development environment | Docker Compose, Python and JavaScript lockfiles |
+The runtime still needs Chromium's system libraries; CI installs them with
+Playwright's `--with-deps` option.
 
-Unstructured parsing and S3-compatible storage are not implemented yet: Markdown and
-text use built-in location-preserving parsers. Reranking is two-stage: a rerank
-model scores the hydrated candidates (falling back to a deterministic term-coverage
-baseline), then the chat model grades the strongest. Dependencies are locked in
-`backend/uv.lock` and the root `package-lock.json`.
+`make quality` runs Ruff for linting, formatting, and Python complexity, plus
+ESLint for TypeScript/JavaScript complexity and the 1,000-line file limit.
+`make app-test` runs backend and frontend tests plus the frontend build;
+`make smoke` drives the real application in a browser.
 
-## First release scope
+## Current limits and roadmap
 
-- Upload TXT and Markdown first, then text-bearing PDF, DOCX, and PPTX.
-- Ingest individual public HTML pages supplied by the user.
-- Track ingestion progress, errors, retries, document versions, and deletion.
-- Combine vector and keyword results, rerank evidence, and build a bounded context.
-- Support conversational questions with source filters, citations, and explicit insufficient-evidence responses. Each conversation keeps its own source selection; a new one asks whether to keep the current selection, and is named by the model after its first question.
-- Add bounded source selection and search expansion after establishing a conventional RAG baseline.
-- Include source ownership checks, retrieval isolation tests, and a reproducible evaluation dataset.
+Implemented today:
 
-OCR, recursive crawling, enterprise OAuth, live SQL/API tools, and distributed microservices are later extensions.
+- uploads for PDF with a text layer, DOCX, PPTX, XLSX, HTML, Markdown, text,
+  data, and common code files;
+- bounded same-path website crawling, ingestion progress, retries, immutable
+  document versions, deletion, and cleanup;
+- hybrid retrieval, two-stage reranking, bounded search expansion, source
+  filters, canonical citations, and explicit insufficient-evidence responses;
+- source ownership checks, retrieval isolation tests, and end-to-end browser
+  smoke coverage.
+
+Not implemented yet:
+
+- OCR and image ingestion, legacy binary Office formats, scheduled re-crawls,
+  response streaming, enterprise OAuth/connectors, and live SQL/API tools;
+- Unstructured-based parsing, S3-compatible raw storage, distributed services,
+  a reindex endpoint, orphaned-vector reconciliation, and the evaluation harness.
+
+Supported formats currently use built-in location-preserving parsers rather than
+Unstructured.
+
+Other known contract gaps: ingestion mutations do not accept an
+`Idempotency-Key` (a retried source creation creates another source; retrying a
+completed delete returns 404); source and document listings are capped at 200
+and 500 items without cursors; readiness checks PostgreSQL but not Qdrant, whose
+outages fall back to keyword search. Crawls are bounded and sequential. Token
+counts are approximate, and chunks are also bounded by characters.
+
+### Evaluation status
+
+A planned demonstration corpus covers an authentication decision record, a
+platform handbook, and rollout notes, with direct, follow-up, multi-source,
+conflicting-version, and unanswerable questions. The retrieval pipeline exists,
+but the versioned corpus, judged questions, and baseline-versus-agent benchmark
+do not. `HybridRetriever` is the conventional search path used by the agent; no
+evaluation harness runs it independently yet. Deterministic application checks
+do not establish retrieval quality or live-model performance. This ships the
+agent before the measured baseline requested by ADR 006; that deviation should
+be recorded in the decision log when the benchmark is restored.
 
 ## Documentation
 
-| Document | Purpose |
-| --- | --- |
-| [User-story flows](docs/flows.md) | Each user story traced file by file, with the log lines it writes |
-| [Backend guide](backend/README.md) | Backend layout, ingestion, websites, querying, and how to run and test it |
-| [Frontend guide](frontend/README.md) | The browser workspace |
+- [User-story flows](docs/flows.md) — every story traced file by file, including
+  its structured log events.
+- [Backend guide](backend/README.md) — backend boundaries, ingestion, websites,
+  querying, and verification.
+- [Frontend guide](frontend/README.md) — browser workspace and commands.
 
-## Checks
-
-`make quality` runs Ruff (lint, format, cyclomatic complexity at most 10) and ESLint
-(the same complexity limit, files at most 1,000 lines). `make app-test` runs the
-backend and frontend tests and the frontend build; `make smoke` drives the real app
-in a browser. Project-scoped Codex roles in `.codex/agents/` cover backend,
-ingestion, retrieval, frontend, QA, and architecture review.
-
-## Portfolio demonstration
-
-Use a synthetic corpus containing an authentication decision record, a platform handbook, and rollout notes. Demonstrate a direct question, a follow-up, an answer that requires a second source, a conflict between document versions, and an unanswerable question. Show citations and measured results against the baseline retrieval system.
-
-The agent and retrieval pipeline exist; the versioned evaluation corpus, judged
-questions, and the baseline-versus-agent benchmark do not yet. The conventional
-retrieval path (`HybridRetriever`) is the same search the agent uses, but no
-evaluation harness runs it on its own yet. This ships the agent before the measured
-baseline that ADR 006 asks for; record that deviation in the decision log when it
-is restored. Deterministic application checks do not establish retrieval quality
-or live-model benchmarks.
-
-Known contract gaps in this slice: ingestion mutations do not accept an
-`Idempotency-Key` (a retried source creation creates another source; a retried
-delete returns 404); source and document listings return at most 200 and 500
-items without cursors; readiness checks PostgreSQL but not Qdrant (vector outages
-fall back to keyword search); there is no reconciliation job for orphaned vectors
-and no document reindex endpoint.
+Project-scoped Codex roles in [.codex/agents](.codex/agents) cover backend,
+ingestion, retrieval, frontend, QA, and independent architecture review.

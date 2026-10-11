@@ -88,6 +88,17 @@ def failure_details(error: Exception) -> tuple[str, bool]:
     return "internal_error", True
 
 
+def pipeline_signature(embeddings: EmbeddingModel) -> str:
+    """Changes whenever parsing, chunking, or the embedding model changes."""
+    return f"{PARSER_REVISION}|{CHUNKING.signature}|{embeddings.identity}"
+
+
+def queue_reindex(store: IndexingRepository, embeddings: EmbeddingModel) -> int:
+    """Queue documents indexed by another pipeline, so changing the embedding model (or
+    parsing or chunking) re-indexes existing documents without a re-upload."""
+    return store.queue_stale(pipeline_signature(embeddings))
+
+
 class DocumentIndexer:
     """Index one immutable document version and publish it only through fenced checks."""
 
@@ -107,8 +118,7 @@ class DocumentIndexer:
 
     @property
     def signature(self) -> str:
-        """Changes whenever parsing, chunking, or the embedding model changes."""
-        return f"{PARSER_REVISION}|{CHUNKING.signature}|{self._embeddings.identity}"
+        return pipeline_signature(self._embeddings)
 
     def handle(self, job: ClaimedJob) -> None:
         target = self._store.target(job)

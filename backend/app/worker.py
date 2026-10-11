@@ -8,7 +8,8 @@ from contextlib import ExitStack
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.data.db import create_database_engine
-from app.services.indexing import IngestionWorker
+from app.data.indexing import IndexingRepository
+from app.services.indexing import IngestionWorker, queue_reindex
 from app.utils.config import Settings
 from app.utils.logging import show_flows
 from app.wiring import build_worker, create_services
@@ -39,8 +40,14 @@ def main() -> None:
     with ExitStack() as resources:
         engine = create_database_engine(config.database_url)
         resources.callback(engine.dispose)
-        worker = build_worker(engine, config, create_services(config, resources))
+        services = create_services(config, resources)
+        worker = build_worker(engine, config, services)
         logger.info("Ingestion worker started; worker_id=%s", worker.worker_id)
+        try:
+            stale = queue_reindex(IndexingRepository(engine), services.embeddings)
+            logger.info("Queued %d documents indexed by an older pipeline.", stale)
+        except SQLAlchemyError:
+            logger.warning("Database unavailable; documents were not checked for re-indexing.")
         serve(worker, stop)
     logger.info("Ingestion worker stopped.")
 

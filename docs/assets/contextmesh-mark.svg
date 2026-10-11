@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160" role="img" aria-labelledby="title desc">
+  <title id="title">ContextMesh project mark</title>
+  <desc id="desc">A teal network of connected knowledge nodes on a dark navy rounded square.</desc>
+  <defs>
+    <linearGradient id="mesh" x1="35" y1="31" x2="126" y2="130" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#69c8b7"/>
+      <stop offset="1" stop-color="#168278"/>
+    </linearGradient>
+  </defs>
+  <rect width="160" height="160" rx="36" fill="#101c22"/>
+  <g fill="none" stroke="url(#mesh)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M43 43 80 31l38 19 10 43-31 34-45-5-22-36Z" stroke-width="6"/>
+    <path d="m43 43 39 43 36-36M82 86l46 7M82 86l15 41M52 122l30-36M30 86l52 0" stroke-width="4" opacity=".9"/>
+  </g>
+  <g fill="#101c22" stroke="#69c8b7" stroke-width="5">
+    <circle cx="43" cy="43" r="10"/>
+    <circle cx="80" cy="31" r="8"/>
+    <circle cx="118" cy="50" r="10"/>
+    <circle cx="128" cy="93" r="8"/>
+    <circle cx="97" cy="127" r="10"/>
+    <circle cx="52" cy="122" r="8"/>
+    <circle cx="30" cy="86" r="10"/>
+  </g>
+  <circle cx="82" cy="86" r="14" fill="#69c8b7" stroke="#101c22" stroke-width="6"/>
+</svg>
