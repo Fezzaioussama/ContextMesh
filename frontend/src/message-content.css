@@ -98,7 +98,9 @@
   outline-offset: 3px;
 }
 .markdown-table table {
-  width: 100%;
+  /* Natural width, so a wide table scrolls in its region instead of squeezing cells. */
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: .92em;
 }
