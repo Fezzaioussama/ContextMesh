@@ -1,0 +1,287 @@
+/* Foundations, global controls, feedback, and shared motion primitives. */
+
+:root {
+  color-scheme: light;
+  font-family:
+    Inter,
+    "Avenir Next",
+    "Segoe UI",
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    sans-serif;
+  color: #1d2b2d;
+  background: #eef2f1;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+
+  --font-display: "Avenir Next", Inter, "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --ink-strong: #172629;
+  --ink: #304346;
+  --ink-soft: #617276;
+  --ink-faint: #5b6b6e;
+  --surface-canvas: #f2f5f4;
+  --surface-raised: #ffffff;
+  --surface-soft: #f7f9f8;
+  --surface-tint: #edf6f3;
+  --surface-dark: #132125;
+  --surface-dark-raised: #1a2b30;
+  --line: #dfe6e3;
+  --line-strong: #cbd7d3;
+  --line-dark: #2b3e43;
+  --accent: #147d70;
+  --accent-strong: #0b645b;
+  --accent-soft: #dff1ec;
+  --accent-bright: #39b6a1;
+  --agent: #596edb;
+  --agent-soft: #e9edff;
+  --warning: #966515;
+  --warning-soft: #fbf1dc;
+  --danger: #aa4b38;
+  --danger-soft: #fbeae5;
+  /* At least 3:1 against the primary light and dark surfaces. */
+  --focus-ring: #008c7c;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --radius-round: 999px;
+  --shadow-sm: 0 1px 2px rgb(21 44 40 / 5%), 0 4px 12px rgb(21 44 40 / 4%);
+  --shadow-md: 0 12px 36px rgb(20 43 39 / 9%), 0 2px 8px rgb(20 43 39 / 5%);
+  --shadow-lg: 0 24px 64px rgb(14 35 32 / 16%), 0 4px 16px rgb(14 35 32 / 7%);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.2, 0.9, 0.25, 1.15);
+  --duration-fast: 140ms;
+  --duration-base: 220ms;
+  --duration-slow: 420ms;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-width: 320px;
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--surface-canvas);
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) ease,
+    background-color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    box-shadow var(--duration-base) var(--ease-out),
+    transform var(--duration-base) var(--ease-out);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+button,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+input:focus-visible,
+summary:focus-visible,
+a:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+button:not(:disabled):active {
+  transform: scale(0.98);
+}
+
+::selection {
+  color: var(--ink-strong);
+  background: #bfe8df;
+}
+
+.icon-button {
+  min-width: 34px;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+}
+
+.icon-button:hover {
+  background: rgb(114 141 145 / 12%);
+}
+
+.icon-button svg {
+  width: 17px;
+  height: 17px;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 14px 10px;
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+
+.pulse-dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  background: var(--accent-bright);
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px rgb(57 182 161 / 12%);
+  animation: pulse 1.3s ease-in-out infinite;
+}
+
+.error-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+  padding: 12px 14px;
+  color: #864636;
+  background: var(--danger-soft);
+  border: 1px solid #edcfc6;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  font-size: 11px;
+  line-height: 1.55;
+  animation: reveal var(--duration-base) var(--ease-out) both;
+}
+
+.error-notice .text-button {
+  flex-shrink: 0;
+  color: inherit;
+}
+
+.text-button {
+  padding: 5px 2px;
+  color: var(--accent);
+  background: transparent;
+  border: 0;
+  font-size: 10px;
+  font-weight: 660;
+  text-decoration: none;
+}
+
+.text-button:hover {
+  color: var(--accent-strong);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.32;
+    transform: scale(0.78);
+  }
+}
+
+@keyframes status-ring {
+  0% {
+    opacity: 0.8;
+    transform: scale(0.65);
+  }
+  75%,
+  100% {
+    opacity: 0;
+    transform: scale(1.55);
+  }
+}
+
+@keyframes mark-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) rotate(-10deg) scale(0.85);
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+@keyframes message-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes banner-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+  }
+}

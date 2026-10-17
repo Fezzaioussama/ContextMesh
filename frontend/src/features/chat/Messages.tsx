@@ -28,7 +28,7 @@ export function MessageList({
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (end.current !== null)
-      end.current.scrollIntoView({ block: "end", behavior: "smooth" });
+      end.current.scrollIntoView({ block: "end" });
   }, [messages, pending]);
   return (
     <section className="message-list" aria-label="Conversation messages">

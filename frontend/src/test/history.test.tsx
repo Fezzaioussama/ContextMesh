@@ -43,6 +43,9 @@ describe("saved conversation boundaries", () => {
     const contents = screen.getAllByRole("article");
     expect(contents[0].textContent).toContain("Oldest saved question");
     expect(contents[1].textContent).toContain("Newest saved reply");
+    expect(Element.prototype.scrollIntoView).toHaveBeenLastCalledWith({
+      block: "end",
+    });
     expect(urls).toHaveLength(2);
   });
 
