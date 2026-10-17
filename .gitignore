@@ -51,7 +51,6 @@ coverage/
 *.tsbuildinfo
 .eslintcache
 .next/
-.codex
 .aws
 .agents
 
