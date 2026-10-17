@@ -11,7 +11,12 @@ from app.data.qdrant import QdrantVectorIndex
 from app.services.models import (
     AgentOutcome,
     Answer,
+    Citation,
+    Claim,
+    Evidence,
     FetchedPage,
+    Locator,
+    Passage,
     StructuredReply,
     StructuredTask,
     TraceStage,
@@ -206,3 +211,42 @@ class FixtureWorkflow:
     def run(self, identity, question, history, catalog):
         self.calls.append((question, history, catalog))
         return self.outcome
+
+
+GROUNDED_TRACE = ("route", "plan", "retrieve", "rerank", "assess", "answer", "verify", "release")
+
+
+def evidence(title: str, text: str) -> Evidence:
+    """A retrieved passage of the document titled `title`."""
+    passage = Passage(
+        uuid4(), uuid4(), uuid4(), uuid4(), uuid4(), "Source", title, Locator(("H",), 1, 2), text
+    )
+    return Evidence(passage, 1.0, 1)
+
+
+def cited_outcome(cited=(), context=(), status="answered", stages=GROUNDED_TRACE):
+    """An outcome with one claim per cited passage, drafted from `context`."""
+    citations = tuple(citation(number, item.passage) for number, item in enumerate(cited, start=1))
+    claims = tuple(
+        Claim(f"claim-{item.number}", f"Claim {item.number}.", (item.id,)) for item in citations
+    )
+    text = " ".join(claim.text for claim in claims) or "Fixture reply."
+    trace = tuple(TraceStage(stage, f"Fixture {stage}.") for stage in stages)
+    answer = Answer(status, text, claims, citations, ())
+    return AgentOutcome(answer, trace, Usage(100, 20), (), context)
+
+
+def citation(number: int, passage: Passage) -> Citation:
+    """The canonical citation of a passage, with a short fixture snippet."""
+    return Citation(
+        f"citation-{number}",
+        number,
+        passage.source_id,
+        passage.document_id,
+        passage.document_version_id,
+        passage.index_generation_id,
+        passage.chunk_id,
+        passage.title,
+        passage.locator,
+        f"Snippet {number}.",
+    )

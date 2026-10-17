@@ -22,7 +22,7 @@ quality-python:
 quality-js:
 	npm run quality:js
 
-.PHONY: app-setup dev stop db migrate backend-dev worker-dev frontend-dev app-test smoke-setup smoke
+.PHONY: app-setup dev stop db migrate backend-dev worker-dev frontend-dev app-test smoke-setup smoke eval
 
 .env:
 	cp .env.example .env
@@ -51,6 +51,10 @@ worker-dev:
 
 frontend-dev:
 	npm --workspace frontend run dev
+
+# Offline agent evaluation over the starter dataset; e.g. ARGS="--repeats 3 --tag pricing".
+eval:
+	uv run --project backend --locked python -m app.evaluate --dataset backend/evals/datasets/starter.jsonl $(ARGS)
 
 app-test:
 	uv run --project backend --locked pytest -c backend/pyproject.toml backend/tests

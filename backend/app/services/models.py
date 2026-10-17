@@ -296,12 +296,18 @@ class Usage:
 
 @dataclass(frozen=True)
 class AgentOutcome:
-    """`consulted` lists every document whose passages a model saw for this answer."""
+    """The released answer, its trace and token usage, and the evidence behind it.
+
+    `consulted` lists every document whose passages a model saw for this answer.
+    `context` holds the passages a grounded answer was drafted from, for evaluation; it is
+    never saved, and it stays empty for a direct response or when nothing was drafted.
+    """
 
     answer: Answer
     trace: tuple[TraceStage, ...]
     usage: Usage
     consulted: tuple[UUID, ...] = ()
+    context: tuple[Evidence, ...] = ()
 
 
 # Conversations
@@ -315,11 +321,16 @@ class Conversation:
     updated_at: datetime
 
 
+MessageRole = Literal["user", "assistant"]
+
+
 @dataclass(frozen=True)
 class Message:
+    """One conversation message; an assistant message carries its answer and trace."""
+
     id: UUID
     turn_id: UUID
-    role: Literal["user", "assistant"]
+    role: MessageRole
     content: str
     created_at: datetime
     answer: Answer | None = None

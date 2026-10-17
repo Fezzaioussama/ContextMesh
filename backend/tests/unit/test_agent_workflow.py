@@ -1,6 +1,5 @@
 """Bounded agent behavior through the real LangGraph adapter with scripted models."""
 
-import logging
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -21,7 +20,6 @@ from app.services.models import (
     Usage,
 )
 from app.utils.errors import ContextMeshError
-from app.utils.logging import flow_logger
 from langgraph.errors import GraphRecursionError
 from support import ScriptedReasoning
 
@@ -435,24 +433,6 @@ def test_route_sees_indexed_topics_and_only_recent_user_requests():
             {"name": "System design primer", "description": "System design primer documents"}
         ],
     }
-
-
-class FlowLines(logging.Handler):
-    def __init__(self):
-        super().__init__(logging.INFO)
-        self.lines: list[str] = []
-
-    def emit(self, record):
-        self.lines.append(record.getMessage())
-
-
-@pytest.fixture
-def flow_lines():
-    collector = FlowLines()
-    flow_logger.addHandler(collector)
-    flow_logger.setLevel(logging.INFO)
-    yield collector.lines
-    flow_logger.removeHandler(collector)
 
 
 def test_route_decision_is_traced_and_logged_without_content(flow_lines):

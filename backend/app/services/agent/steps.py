@@ -479,28 +479,28 @@ def _grades(items: tuple[Mapping[str, object], ...]) -> dict[str, int]:
 
 
 def released(state: AgentState, policy: AgentPolicy) -> AgentOutcome:
+    """The run's outcome: the direct response, the supported claims, or the evidence gap."""
     if state.route == "direct":
         answer = Answer("direct", state.direct_response, (), (), ())
         trace = state.traced("release", "Released a citation-free direct response.").trace
         return AgentOutcome(answer, trace, state.usage)
-    draft = state.draft
-    drafted = () if draft is None else draft.claims
+    # No draft (no searchable source, or no passage passed access checks) releases like
+    # a draft without claims.
+    draft = state.draft or Draft("insufficient_evidence", (), (), ())
     unsupported = set(state.unsupported)
-    kept = tuple(claim for index, claim in enumerate(drafted) if index not in unsupported)
-    removed = len(drafted) - len(kept)
-    drafted_gaps = () if draft is None else draft.gaps
-    gaps = tuple(dict.fromkeys((*drafted_gaps, *state.gaps)))[: policy.max_gaps]
-    if not gaps and draft is not None and draft.status == "partial":
+    kept = tuple(claim for index, claim in enumerate(draft.claims) if index not in unsupported)
+    removed = len(draft.claims) - len(kept)
+    gaps = tuple(dict.fromkeys((*draft.gaps, *state.gaps)))[: policy.max_gaps]
+    if not gaps and draft.status == "partial":
         gaps = (UNSPECIFIED_GAP,)  # A partial verdict is never shown unexplained.
     if kept:
         complete = draft.status == "answered" and not gaps and removed == 0
         answer = _cited_answer(kept, gaps, "answered" if complete else "partial")
+        removal = f" Removed {counted(removed, 'unsupported claim')}." if removed else ""
         summary = (
             f"Released {counted(len(answer.claims), 'supported claim')} with "
-            f"{counted(len(answer.citations), 'citation')}."
+            f"{counted(len(answer.citations), 'citation')}.{removal}"
         )
-        if removed:
-            summary += f" Removed {counted(removed, 'unsupported claim')}."
     else:
         text = "I could not find enough evidence in the selected sources to answer this question."
         answer = Answer("insufficient_evidence", text, (), (), gaps or (NO_EVIDENCE_GAP,))
@@ -508,7 +508,7 @@ def released(state: AgentState, policy: AgentPolicy) -> AgentOutcome:
     trace = state.traced("release", summary).trace
     # Every document retrieved in any round counts, including passages later pushed out.
     consulted = tuple(sorted(state.consulted, key=str))
-    return AgentOutcome(answer, trace, state.usage, consulted)
+    return AgentOutcome(answer, trace, state.usage, consulted, draft.context)
 
 
 def _cited_answer(kept: tuple[DraftClaim, ...], gaps: tuple[str, ...], status: str) -> Answer:

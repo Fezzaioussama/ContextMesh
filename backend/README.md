@@ -10,7 +10,8 @@ backend/
   app/
     main.py              # API process: create_app (Uvicorn factory)
     worker.py            # ingestion worker process: `python -m app.worker`
-    wiring.py            # picks the concrete classes for both processes
+    evaluate.py          # offline agent evaluation: `python -m app.evaluate` (`make eval`)
+    wiring.py            # picks the concrete classes for both processes and the evaluation
     controllers/         # HTTP: routes and their request/response shapes
       chat.py            #   assistant: conversations, messages, metadata
       sources.py         #   sources, documents, jobs, evidence
@@ -25,6 +26,7 @@ backend/
       validation.py      #   input rules (messages, titles, uploads)
       urls.py            #   URL rules (canonical URLs, crawl scope)
       agent/             #   steps.py (each step), graph.py (LangGraph), state.py, prompts.py
+      evaluation/        #   cases.py (dataset, metrics), judge.py (LLM judge), runner.py
     data/                # everything that stores or fetches data
       db.py              #   PostgreSQL tables, engine, readiness
       chat.py            #   conversations, turns, saved answers
@@ -33,8 +35,10 @@ backend/
       indexing.py        #   worker-side publication and crawl writes
       retrieval.py       #   catalog, keyword search, passage hydration
       qdrant.py, blobs.py, llm.py, fetcher.py, tracing.py
+      experiments.py     #   LangSmith datasets and experiments for `--langsmith`
     utils/               # config, errors, logging (flow events), document parsers
   migrations/versions/   # 0001 assistant … 0004 formats and websites
+  evals/                 # starter corpus and golden dataset; reports/ is git-ignored
   scripts/start_{api,worker}.sh
   tests/{unit,integration,e2e}/
 ```
@@ -141,8 +145,9 @@ Scanned documents and images need OCR, which is not implemented; legacy binary
 Office formats are not supported. Crawls are bounded and sequential, with no
 scheduled re-crawl. Token counts are approximate; chunks are also bounded by
 characters.
-There is no streaming, reindex endpoint, reconciliation job
-for orphaned vectors, or evaluation harness yet. Ingestion mutations do not take
+There is no streaming, reindex endpoint, or reconciliation job
+for orphaned vectors yet, and agent evaluation is an offline command only
+(`evals/README.md`). Ingestion mutations do not take
 an `Idempotency-Key`, listings are capped without cursors, and readiness does not
 check Qdrant. When the embedding model, parser, or chunking changes, the worker
 re-indexes existing documents on startup; the old model's vectors are left behind. The fixed development identity is for local use only.

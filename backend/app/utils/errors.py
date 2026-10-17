@@ -61,6 +61,15 @@ class ContextMeshError(Exception):
         super().__init__(self.message)
 
 
+def failure_code(error: Exception) -> str:
+    """The failure's safe code, or its exception class name when it has none.
+
+    Neither carries the error message, so offline tools such as the evaluation CLI can log
+    and report it where the API would only say `internal_error`.
+    """
+    return error.code if isinstance(error, ContextMeshError) else type(error).__name__
+
+
 class IngestionFailure(Exception):
     """A worker job failure whose safe code is stored; retryable ones are rescheduled."""
 

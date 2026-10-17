@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     openrouter_base_url: str = Field(
         default="https://openrouter.ai/api/v1", validation_alias="OPENROUTER_BASE_URL"
     )
+    # The offline evaluation's judge; empty reuses OPENROUTER_MODEL (see `judge_model`).
+    openrouter_judge_model: str = Field(default="", validation_alias="OPENROUTER_JUDGE_MODEL")
     decision_enabled: bool = Field(default=False, validation_alias="CONTEXTMESH_DECISION_ENABLED")
     decision_model: str = Field(
         default="typesafe/jev-1.13", validation_alias="CONTEXTMESH_DECISION_MODEL"
@@ -151,6 +153,15 @@ class Settings(BaseSettings):
             self.decision_model,
             self.decision_endpoint,
         )
+
+    @property
+    def judge_model(self) -> str:
+        """The evaluation judge's model, or the chat model when none is set.
+
+        A judge that grades its own model's answers is biased, so the evaluation CLI warns
+        when the two are the same.
+        """
+        return self.openrouter_judge_model.strip() or self.openrouter_model
 
     @property
     def selected_tracing(self) -> TracingSettings:

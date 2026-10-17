@@ -19,6 +19,7 @@ docker compose logs api worker | grep "job_id=<id>"
 | `crawl_website` | Crawl a website source | API, then worker |
 | `ask_question` | Ask a question, get a direct or cited answer | API |
 | `delete_document` / `delete_source` | Remove a document or source | API, then worker |
+| `evaluate_agent` | Score the agent over a golden dataset | CLI |
 
 ## `add_source`
 
@@ -93,6 +94,39 @@ then `answered status=… citations=… tokens=…` or `failed code=…`. A repl
 
 Logs: `step=requested … job_id=…`, then `job_started` / `job_ended`.
 
+## `evaluate_agent`
+
+An offline command (`make eval`, or `python -m app.evaluate --dataset PATH`); it adds
+no endpoint, table, or job, and only reads the database. See `backend/evals/README.md`.
+
+1. `evaluate.py` `main` parses the options; `services/evaluation/cases.py`
+   `load_cases` validates the JSONL dataset (an error names the line). A bad option,
+   dataset, missing credential, or empty catalog exits with code 2.
+2. `wiring.py` `build_evaluation` composes the API's agent (`build_assistant`, shared
+   with `build_api`) and a judge model (`OPENROUTER_JUDGE_MODEL`, or the chat model with
+   a bias warning); turn tracing stays off unless `--langsmith` is given. The catalog
+   is the development workspace's searchable sources, narrowed by `--source`.
+3. `services/evaluation/runner.py` `Evaluator` runs every case `--repeats` times on
+   `--concurrency` threads through `AgentWorkflow.run`; an agent error is recorded on
+   that run. `cases.py` `scored` computes route, abstention, document recall and
+   precision over cited titles, quote recall over `AgentOutcome.context`, and budget
+   (tokens, latency, search rounds, repairs); `judge.py` `Judge` grades faithfulness
+   and correctness, recording a judge error on the run instead of raising.
+4. `summarized` averages each metric overall and per tag, and `failed_thresholds`
+   checks every `--fail-under`. `evaluate.py` writes `report.json` and `report.md` to
+   `--output` (default `backend/evals/reports/<UTC time>/`) and exits 1 when a
+   threshold fails.
+5. With `--langsmith`, `data/experiments.py` syncs the dataset (named after the file,
+   examples keyed by case id) and logs the recorded runs and scores as an experiment.
+   Any other failure, such as LangSmith rejecting the upload after the report was
+   written, exits with code 3 and prints only its code.
+
+Logs: `started cases=… repeats=… sources=…`; per run `case_scored status=… tokens=…
+judge_errors=…` or `case_failed code=…`, with `case_id` and `repeat` also on that run's
+`ask_question` lines; `experiment_logged examples=… runs=…` with `--langsmith`; then
+`finished runs=… agent_errors=… judge_errors=… failed_thresholds=…`, or `failed code=…`
+for an exit 3.
+
 ## Where to look
 
 | Question | File |
@@ -105,3 +139,4 @@ Logs: `step=requested … job_id=…`, then `job_started` / `job_ended`.
 | What does an error code mean? | `utils/errors.py` |
 | Settings and limits | `utils/config.py`, `.env.example` |
 | Why did the agent answer that way? | LangSmith run `ask_question`, filtered by `turn_id` |
+| How good are the agent's answers? | `make eval`: `evaluate.py`, `services/evaluation/`, `backend/evals/` |

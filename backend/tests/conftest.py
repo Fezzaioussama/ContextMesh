@@ -1,5 +1,7 @@
-"""Real PostgreSQL integration fixtures, isolated by canonical workspace identity."""
+"""Shared fixtures: captured flow log lines, and real PostgreSQL integration fixtures
+isolated by canonical workspace identity."""
 
+import logging
 import os
 import subprocess
 import sys
@@ -12,12 +14,35 @@ from app.data.db import provision_identity
 from app.main import create_app
 from app.services.models import Identity
 from app.utils.config import Settings
+from app.utils.logging import flow_logger
 from app.wiring import build_worker
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from support import memory_services
 
 BACKEND = Path(__file__).resolve().parents[1]
+
+
+class FlowLines(logging.Handler):
+    """Collects the flow lines logged while a test runs."""
+
+    def __init__(self):
+        super().__init__(logging.INFO)
+        self.lines: list[str] = []
+
+    def emit(self, record):
+        self.lines.append(record.getMessage())
+
+
+@pytest.fixture
+def flow_lines():
+    """The flow lines logged during the test, in order; the logger's level is restored."""
+    collector, level = FlowLines(), flow_logger.level
+    flow_logger.addHandler(collector)
+    flow_logger.setLevel(logging.INFO)
+    yield collector.lines
+    flow_logger.removeHandler(collector)
+    flow_logger.setLevel(level)
 
 
 @pytest.fixture(scope="session")
