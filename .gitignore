@@ -51,8 +51,6 @@ coverage/
 *.tsbuildinfo
 .eslintcache
 .next/
-.github
-.claude
 .codex
 .aws
 .agents
@@ -71,6 +69,9 @@ backend/evals/reports/
 .codex/history.jsonl
 .codex/sessions/
 .codex/log/
+
+# Claude Code personal settings; keep project config, agents, scripts, and skills in Git
+.claude/settings.local.json
 
 # Editor and operating system
 .DS_Store
