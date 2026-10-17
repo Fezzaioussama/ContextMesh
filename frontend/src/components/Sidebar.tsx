@@ -27,27 +27,8 @@ export function Sidebar(props: SidebarProps) {
       aria-label="Conversation sidebar"
       id="conversation-sidebar"
     >
-      <div className="brand">
-        <span className="brand-symbol">
-          <Icon name="mesh" />
-        </span>
-        <span>
-          Context<span className="brand-word-accent">Mesh</span>
-          <span className="brand-caption">KNOWLEDGE, CONNECTED.</span>
-        </span>
-        <button
-          className="icon-button sidebar-close"
-          aria-label="Close conversations"
-          onClick={props.close}
-        >
-          <Icon name="close" />
-        </button>
-      </div>
-      <NewConversation
-        narrowed={props.narrowed}
-        creating={props.creating}
-        create={props.create}
-      />
+      <Brand close={props.close} />
+      <NewConversation narrowed={props.narrowed} creating={props.creating} create={props.create} />
       <div className="sidebar-section">
         <span>YOUR CONVERSATIONS</span>
         <button
@@ -59,18 +40,10 @@ export function Sidebar(props: SidebarProps) {
           <Icon name="refresh" />
         </button>
       </div>
-      <ConversationList
-        items={props.items}
-        selected={props.selected}
-        select={props.select}
-      />
+      <ConversationList items={props.items} selected={props.selected} select={props.select} />
       <SidebarStatus loading={props.loading} empty={props.items.length === 0} />
       <ErrorNotice message={props.error} retry={props.refresh} />
-      <MoreConversations
-        visible={props.hasMore}
-        loading={props.loading}
-        more={props.more}
-      />
+      <MoreConversations visible={props.hasMore} loading={props.loading} more={props.more} />
       <div className="sidebar-footer">
         <span className="workspace-avatar">L</span>
         <div>
@@ -82,6 +55,26 @@ export function Sidebar(props: SidebarProps) {
   );
 }
 
+/** The ContextMesh mark and name, with the close button the drawer shows on small screens. */
+function Brand({ close }: { close: () => void }) {
+  return (
+    <div className="brand">
+      <span className="brand-symbol">
+        <Icon name="mesh" />
+      </span>
+      <span>
+        Context<span className="brand-word-accent">Mesh</span>
+        <span className="brand-caption">KNOWLEDGE, CONNECTED.</span>
+      </span>
+      <button className="icon-button sidebar-close" aria-label="Close conversations" onClick={close}>
+        <Icon name="close" />
+      </button>
+    </div>
+  );
+}
+
+const choiceId = "new-conversation-choice";
+
 /** With a narrowed source selection, asks whether the new conversation keeps it. */
 function NewConversation({
   narrowed,
@@ -89,7 +82,6 @@ function NewConversation({
   create,
 }: Pick<SidebarProps, "narrowed" | "creating" | "create">) {
   const [choosing, setChoosing] = useState(false);
-  const asking = choosing && narrowed !== null;
   function start() {
     if (narrowed === null) create(false);
     else setChoosing((value) => !value);
@@ -98,32 +90,33 @@ function NewConversation({
     setChoosing(false);
     create(keepScope);
   }
+  // Searching all sources needs no question, so the button only toggles one when narrowed.
+  const toggle = narrowed === null ? {} : { "aria-expanded": choosing, "aria-controls": choiceId };
   return (
     <div className="new-conversation-area">
-      <button
-        className="new-conversation"
-        onClick={start}
-        disabled={creating}
-        aria-expanded={narrowed === null ? undefined : asking}
-        aria-controls={narrowed === null ? undefined : "new-conversation-choice"}
-      >
+      <button className="new-conversation" onClick={start} disabled={creating} {...toggle}>
         <Icon name="plus" />
         New conversation
       </button>
-      {asking && (
-        <div
-          className="new-conversation-choice"
-          id="new-conversation-choice"
-          role="group"
-          aria-label="Sources for the new conversation"
-        >
-          <p>Sources for the new conversation</p>
-          <button onClick={() => choose(true)}>
-            Keep the {narrowed} selected {narrowed === 1 ? "source" : "sources"}
-          </button>
-          <button onClick={() => choose(false)}>Search all sources</button>
-        </div>
-      )}
+      {choosing && narrowed !== null && <ScopeChoice count={narrowed} choose={choose} />}
+    </div>
+  );
+}
+
+/** Whether the new conversation keeps the current narrowed sources or searches all. */
+function ScopeChoice({ count, choose }: { count: number; choose: (keepScope: boolean) => void }) {
+  return (
+    <div
+      className="new-conversation-choice"
+      id={choiceId}
+      role="group"
+      aria-label="Sources for the new conversation"
+    >
+      <p>Sources for the new conversation</p>
+      <button onClick={() => choose(true)}>
+        Keep the {count} selected {count === 1 ? "source" : "sources"}
+      </button>
+      <button onClick={() => choose(false)}>Search all sources</button>
     </div>
   );
 }

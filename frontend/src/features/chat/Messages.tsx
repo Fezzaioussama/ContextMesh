@@ -28,36 +28,35 @@ export function MessageList({
 }) {
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (end.current !== null)
-      end.current.scrollIntoView({ block: "end" });
+    end.current?.scrollIntoView({ block: "end" });
   }, [messages, pending]);
   return (
     <section className="message-list" aria-label="Conversation messages">
       <div role="log" aria-live="polite" aria-relevant="additions">
         {messages.map((message) => (
-          <article
-            key={message.id}
-            className="message"
-            data-role={message.role}
-          >
-            <div className="message-avatar">
-              {message.role === "user" ? <span>Y</span> : <Icon name="mesh" />}
-            </div>
-            <div className="message-body">
-              <div className="message-meta">
-                <strong>{message.role === "user" ? "You" : AGENT_NAME}</strong>
-                <time dateTime={message.created_at}>
-                  {timestamp(message.created_at)}
-                </time>
-              </div>
-              <MessageContent message={message} />
-            </div>
-          </article>
+          <SavedMessage key={message.id} message={message} />
         ))}
       </div>
       {pending !== null && <StreamingMessages turn={pending} />}
       <div ref={end} />
     </section>
+  );
+}
+
+/** One saved message with its author, time, and content. */
+function SavedMessage({ message }: { message: Message }) {
+  const fromUser = message.role === "user";
+  return (
+    <article className="message" data-role={message.role}>
+      <div className="message-avatar">{fromUser ? <span>Y</span> : <Icon name="mesh" />}</div>
+      <div className="message-body">
+        <div className="message-meta">
+          <strong>{fromUser ? "You" : AGENT_NAME}</strong>
+          <time dateTime={message.created_at}>{timestamp(message.created_at)}</time>
+        </div>
+        <MessageContent message={message} />
+      </div>
+    </article>
   );
 }
 

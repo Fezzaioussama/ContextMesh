@@ -157,14 +157,10 @@ export async function sendMessage(
   signal: AbortSignal,
   onEvent: (event: TurnStreamEvent) => void = () => {},
 ): Promise<CompletedTurn> {
-  const body =
-    turn.sourceIds === null
-      ? { message: turn.message }
-      : { message: turn.message, source_ids: turn.sourceIds };
   const path = `${assistant}/conversations/${id(conversationId)}/messages/stream`;
   const response = await fetch(path, {
     method: "POST",
-    body: JSON.stringify(body),
+    body: JSON.stringify(turnBody(turn)),
     signal,
     headers: {
       "Content-Type": "application/json",
@@ -172,132 +168,175 @@ export async function sendMessage(
       "Idempotency-Key": key,
     },
   });
-  if (!response.ok) throw await responseError(response);
-  const completed: unknown = response.headers.get("Content-Type")?.includes("application/json")
-    ? await response.json()
-    : await readTurnStream(response, signal, onEvent);
+  const completed = await responseTurn(response, signal, onEvent);
   if (!isCompletedTurn(completed) || completed.conversation_id !== conversationId)
     throw new ApiError("stream_invalid", true);
   return completed;
 }
 
-const maxStreamFrame = 1_048_576;
-
-/** SSE frames are bounded independently of network chunks and decoded as UTF-8. */
-class TurnStreamParser {
-  private buffer = "";
-
-  push(text: string): TurnStreamEvent[] {
-    this.buffer += text;
-    const events: TurnStreamEvent[] = [];
-    let boundary = /\r\n\r\n|\n\n|\r\r/.exec(this.buffer);
-    while (boundary !== null) {
-      if (boundary.index > maxStreamFrame) throw new ApiError("stream_invalid", true);
-      const event = parseStreamFrame(this.buffer.slice(0, boundary.index));
-      if (event !== null) events.push(event);
-      this.buffer = this.buffer.slice(boundary.index + boundary[0].length);
-      boundary = /\r\n\r\n|\n\n|\r\r/.exec(this.buffer);
-    }
-    if (this.buffer.length > maxStreamFrame) throw new ApiError("stream_invalid", true);
-    return events;
-  }
+/** The request body; a null scope omits `source_ids`, so every eligible source is searched. */
+function turnBody(turn: TurnRequest): { message: string; source_ids?: string[] } {
+  if (turn.sourceIds === null) return { message: turn.message };
+  return { message: turn.message, source_ids: turn.sourceIds };
 }
 
-function parseStreamFrame(frame: string): TurnStreamEvent | null {
-  let event = "message";
-  const data: string[] = [];
-  for (const line of frame.split(/\r\n|\r|\n/)) {
-    if (line.startsWith("event:")) event = line.slice(6).trim();
-    if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
-  }
-  if (data.length === 0) return null;
-  if (!["progress", "delta", "completed", "error"].includes(event)) return null;
-  try {
-    return validatedStreamEvent(event, JSON.parse(data.join("\n")));
-  } catch {
-    throw new ApiError("stream_invalid", true);
-  }
+/** The unvalidated turn a response carries, read from its SSE stream or its JSON body. */
+async function responseTurn(
+  response: Response,
+  signal: AbortSignal,
+  onEvent: (event: TurnStreamEvent) => void,
+): Promise<unknown> {
+  if (!response.ok) throw await responseError(response);
+  if (response.headers.get("Content-Type")?.includes("application/json")) return response.json();
+  return readTurnStream(response, signal, onEvent);
 }
 
-function validatedStreamEvent(event: string, data: Record<string, unknown>): TurnStreamEvent {
-  if (data === null || typeof data !== "object") throw new Error("Invalid event");
-  const text = (key: string) => typeof data[key] === "string";
-  const valid: Record<string, boolean> = {
-    progress: text("stage") && text("message"),
-    delta: text("text"),
-    completed: isCompletedTurn(data),
-    error: text("code") && text("message") && typeof data.retryable === "boolean",
-  };
-  if (!valid[event]) throw new Error("Invalid event");
-  return { event, data } as TurnStreamEvent;
-}
+// Response validation: the stream is untrusted input until every field has the right shape.
+
+/** A check that an untrusted value has the expected shape. */
+type Check = (value: unknown) => boolean;
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function stringFields(value: Record<string, unknown>, fields: string[]): boolean {
-  return fields.every((field) => typeof value[field] === "string");
+/** An object whose listed fields each pass their check; other fields are ignored. */
+function shape(fields: Record<string, Check>): Check {
+  return (value) =>
+    record(value) && Object.entries(fields).every(([field, check]) => check(value[field]));
 }
 
-function strings(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === "string");
+function listOf(check: Check): Check {
+  return (value) => Array.isArray(value) && value.every(check);
 }
 
-function nonnegativeInteger(value: unknown): boolean {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+function nullable(check: Check): Check {
+  return (value) => value === null || check(value);
 }
 
-function validTrace(value: unknown): boolean {
-  return Array.isArray(value) && value.every((stage) =>
-    record(stage) && stringFields(stage, ["stage", "summary"]));
+function oneOf(...allowed: unknown[]): Check {
+  return (value) => allowed.includes(value);
 }
 
-function validLocator(value: unknown): boolean {
-  if (!record(value)) return false;
-  return strings(value.heading_path) &&
-    nonnegativeInteger(value.line_start) && nonnegativeInteger(value.line_end) &&
-    (value.page === null || nonnegativeInteger(value.page)) &&
-    (value.slide === null || nonnegativeInteger(value.slide));
+const isString: Check = (value) => typeof value === "string";
+const isBoolean: Check = (value) => typeof value === "boolean";
+const isCount: Check = (value) => Number.isInteger(value) && (value as number) >= 0;
+const isPositive: Check = (value) => Number.isInteger(value) && (value as number) > 0;
+const isTimestamp: Check = (value) => isString(value) && !Number.isNaN(Date.parse(value as string));
+
+const isTrace = listOf(shape({ stage: isString, summary: isString }));
+
+const isLocator = shape({
+  heading_path: listOf(isString),
+  line_start: isCount,
+  line_end: isCount,
+  page: nullable(isCount),
+  slide: nullable(isCount),
+});
+
+const isCitation = shape({
+  id: isString,
+  number: isPositive,
+  source_id: isString,
+  document_id: isString,
+  document_version_id: isString,
+  index_generation_id: isString,
+  chunk_id: isString,
+  title: isString,
+  snippet: isString,
+  evidence_path: isString,
+  locator: isLocator,
+  source_url: nullable(isString),
+});
+
+const isAnswer = nullable(shape({
+  status: oneOf("direct", "answered", "partial", "insufficient_evidence", "withheld"),
+  gaps: listOf(isString),
+  claims: listOf(shape({ id: isString, text: isString, citation_ids: listOf(isString) })),
+  citations: listOf(isCitation),
+}));
+
+function isMessage(role: string): Check {
+  return shape({
+    role: oneOf(role),
+    id: isString,
+    turn_id: isString,
+    content: isString,
+    created_at: isTimestamp,
+    answer: isAnswer,
+    trace: isTrace,
+  });
 }
 
-function validCitation(value: unknown): boolean {
-  if (!record(value)) return false;
-  return stringFields(value, ["id", "source_id", "document_id", "document_version_id",
-    "index_generation_id", "chunk_id", "title", "snippet", "evidence_path"]) &&
-    nonnegativeInteger(value.number) && value.number !== 0 &&
-    validLocator(value.locator) &&
-    (value.source_url === null || typeof value.source_url === "string");
+/** The `completed` payload: a saved turn with both messages, its trace, and its usage. */
+const isCompletedTurn = shape({
+  turn_id: isString,
+  conversation_id: isString,
+  mode: oneOf("agentic_rag"),
+  user_message: isMessage("user"),
+  assistant_message: isMessage("assistant"),
+  trace: isTrace,
+  usage: shape({ input_tokens: isCount, output_tokens: isCount }),
+}) as (value: unknown) => value is CompletedTurn;
+
+/** The data each stream event must carry; other event names are ignored, as SSE allows. */
+const streamEvents = new Map<string, Check>([
+  ["progress", shape({ stage: isString, message: isString })],
+  ["delta", shape({ text: isString })],
+  ["completed", isCompletedTurn],
+  ["error", shape({ code: isString, message: isString, retryable: isBoolean })],
+]);
+
+// Stream reading
+
+const maxStreamFrame = 1_048_576;
+const frameBoundary = /\r\n\r\n|\n\n|\r\r/;
+
+/** SSE frames are bounded independently of network chunks and decoded as UTF-8. */
+class TurnStreamParser {
+  private buffer = "";
+
+  /** The events completed by `text`; an unterminated frame waits for the next chunk. */
+  push(text: string): TurnStreamEvent[] {
+    const frames = (this.buffer + text).split(frameBoundary);
+    this.buffer = frames.pop() ?? "";
+    if ([...frames, this.buffer].some((frame) => frame.length > maxStreamFrame))
+      throw new ApiError("stream_invalid", true);
+    return frames
+      .map(parseStreamFrame)
+      .filter((event): event is TurnStreamEvent => event !== null);
+  }
 }
 
-function validClaim(value: unknown): boolean {
-  return record(value) && stringFields(value, ["id", "text"]) && strings(value.citation_ids);
+/** One frame's event, or null for a comment, an empty frame, or an unknown event name. */
+function parseStreamFrame(frame: string): TurnStreamEvent | null {
+  const { event, data } = frameFields(frame);
+  const valid = streamEvents.get(event);
+  if (data.length === 0 || valid === undefined) return null;
+  const payload = parsedData(data);
+  if (!valid(payload)) throw new ApiError("stream_invalid", true);
+  return { event, data: payload } as TurnStreamEvent;
 }
 
-function validAnswer(value: unknown): boolean {
-  if (value === null) return true;
-  if (!record(value)) return false;
-  return ["direct", "answered", "partial", "insufficient_evidence", "withheld"].includes(String(value.status)) &&
-    strings(value.gaps) && Array.isArray(value.claims) && value.claims.every(validClaim) &&
-    Array.isArray(value.citations) && value.citations.every(validCitation);
+/** A frame's event name (the last `event:` line, else `message`) and its `data:` lines. */
+function frameFields(frame: string): { event: string; data: string[] } {
+  const lines = frame.split(/\r\n|\r|\n/);
+  const field = (name: string) =>
+    lines.filter((line) => line.startsWith(name)).map((line) => line.slice(name.length));
+  const names = field("event:").map((name) => name.trim());
+  const event = names.length > 0 ? names[names.length - 1] : "message";
+  return { event, data: field("data:").map((line) => line.replace(/^ /, "")) };
 }
 
-function validMessage(value: unknown, role: string): boolean {
-  if (!record(value)) return false;
-  return value.role === role &&
-    stringFields(value, ["id", "turn_id", "content", "created_at"]) &&
-    !Number.isNaN(Date.parse(String(value.created_at))) &&
-    validAnswer(value.answer) && validTrace(value.trace);
+function parsedData(lines: string[]): unknown {
+  try {
+    return JSON.parse(lines.join("\n"));
+  } catch {
+    throw new ApiError("stream_invalid", true);
+  }
 }
 
-function isCompletedTurn(data: unknown): data is CompletedTurn {
-  if (!record(data)) return false;
-  return stringFields(data, ["turn_id", "conversation_id"]) && data.mode === "agentic_rag" &&
-    validMessage(data.user_message, "user") && validMessage(data.assistant_message, "assistant") &&
-    validTrace(data.trace) && record(data.usage) &&
-    nonnegativeInteger(data.usage.input_tokens) && nonnegativeInteger(data.usage.output_tokens);
-}
-
+/** Reads the stream to its `completed` turn, always releasing the reader. */
 async function readTurnStream(
   response: Response,
   signal: AbortSignal,
@@ -305,27 +344,45 @@ async function readTurnStream(
 ): Promise<CompletedTurn> {
   if (response.body === null) throw new ApiError("stream_interrupted", true);
   const reader = response.body.getReader();
-  const parser = new TurnStreamParser();
-  const decoder = new TextDecoder("utf-8", { fatal: true });
   const abort = () => { void reader.cancel().catch(() => {}); };
   signal.addEventListener("abort", abort, { once: true });
   try {
-    while (!signal.aborted) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      for (const event of parser.push(decoder.decode(chunk.value, { stream: true }))) {
-        if (signal.aborted) throw new DOMException("Aborted", "AbortError");
-        if (event.event === "error") throw new ApiError(event.data.code, event.data.retryable);
-        if (event.event === "completed") return event.data;
-        onEvent(event);
-      }
-    }
-    throw new ApiError("stream_interrupted", true);
+    return await completedTurn(reader, signal, onEvent);
   } finally {
     signal.removeEventListener("abort", abort);
     await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
+}
+
+/** Forwards events until `completed`; a stream that ends first was interrupted. */
+async function completedTurn(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  signal: AbortSignal,
+  onEvent: (event: TurnStreamEvent) => void,
+): Promise<CompletedTurn> {
+  const parser = new TurnStreamParser();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+    for (const event of parser.push(decoder.decode(chunk.value, { stream: true }))) {
+      const completed = handledEvent(event, signal, onEvent);
+      if (completed !== null) return completed;
+    }
+  }
+  throw new ApiError("stream_interrupted", true);
+}
+
+/** The completed turn, or null after forwarding a progress or delta event. */
+function handledEvent(
+  event: TurnStreamEvent,
+  signal: AbortSignal,
+  onEvent: (event: TurnStreamEvent) => void,
+): CompletedTurn | null {
+  if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+  if (event.event === "error") throw new ApiError(event.data.code, event.data.retryable);
+  if (event.event === "completed") return event.data;
+  onEvent(event);
+  return null;
 }
 
 // Sources

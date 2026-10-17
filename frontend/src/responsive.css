@@ -1,0 +1,213 @@
+/* Breakpoints for the shell, workspace, welcome, composer, and conversation. */
+
+.sidebar-close,
+.mobile-menu {
+  display: none;
+}
+@media (min-width: 1440px) {
+  .workspace-header {
+    padding-right: 46px;
+    padding-left: 46px;
+  }
+  .workspace-feedback,
+  .chat-scroll {
+    padding-right: 46px;
+    padding-left: 46px;
+  }
+  .welcome {
+    max-width: 820px;
+  }
+}
+@media (max-width: 1020px) {
+  .sidebar {
+    width: 252px;
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+  .workspace-header {
+    padding: 16px 22px;
+  }
+  .chat-scroll,
+  .workspace-feedback {
+    padding-right: 22px;
+    padding-left: 22px;
+  }
+  .setup-banner {
+    margin-right: 22px;
+    margin-left: 22px;
+  }
+  .composer-area {
+    padding-right: 22px;
+    padding-left: 22px;
+  }
+  .suggestion-grid {
+    gap: 10px;
+  }
+  .suggestion {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+}
+@media (max-width: 760px) {
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 30;
+    width: min(310px, calc(100vw - 42px));
+    padding-top: 24px;
+    visibility: hidden;
+    opacity: 0;
+    box-shadow: 16px 0 48px rgb(7 25 27 / 22%);
+    transform: translateX(-102%);
+    transition:
+      transform var(--duration-slow) var(--ease-out),
+      opacity var(--duration-base) ease,
+      visibility 0s linear var(--duration-slow);
+  }
+  .sidebar[data-open="true"] {
+    visibility: visible;
+    opacity: 1;
+    transform: translateX(0);
+    transition-delay: 0s;
+  }
+  .sidebar-close {
+    display: inline-flex;
+    margin-left: auto;
+  }
+  .mobile-menu {
+    display: inline-flex;
+    flex-shrink: 0;
+    color: var(--ink);
+    background: rgb(255 255 255 / 60%);
+    border: 1px solid var(--line);
+  }
+  .workspace-header {
+    min-height: 68px;
+    gap: var(--space-2);
+    padding: 12px 14px;
+  }
+  .agent-heading {
+    flex: 1;
+  }
+  .agent-heading h1 {
+    font-size: 13px;
+  }
+  .agent-heading p {
+    max-width: 190px;
+    font-size: 8px;
+  }
+  .model-pill {
+    max-width: 112px;
+    min-height: 31px;
+    padding: 5px 8px;
+    overflow: hidden;
+    font-size: 8px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .chat-scroll {
+    padding: 16px;
+  }
+  .welcome {
+    padding-top: 32px;
+    padding-bottom: 22px;
+  }
+  .welcome h2 {
+    font-size: 29px;
+    letter-spacing: -1.1px;
+  }
+  .welcome-description {
+    margin-bottom: 25px;
+    font-size: 12px;
+  }
+  .suggestion-grid {
+    grid-template-columns: 1fr;
+  }
+  .suggestion {
+    min-height: 0;
+    padding: 14px 44px 14px 16px;
+  }
+  .suggestion-number {
+    float: left;
+    margin: 0 13px 0 0;
+  }
+  .suggestion strong {
+    margin: 1px 0 5px 42px;
+  }
+  .suggestion > span:not(.suggestion-number):not(.suggestion-arrow) {
+    margin-left: 42px;
+  }
+  .suggestion-arrow {
+    top: 16px;
+  }
+  .composer-area {
+    padding: 8px 14px 13px;
+  }
+  .composer {
+    border-radius: 17px;
+  }
+  .composer textarea {
+    font-size: 16px;
+  }
+  .composer-bottom {
+    font-size: 7px;
+  }
+  .setup-banner {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 13px 14px 0;
+    padding: 13px;
+  }
+  .setup-banner > div:nth-child(2) {
+    flex: 1;
+  }
+  .setup-banner > button {
+    margin-left: 46px;
+  }
+  .workspace-feedback {
+    padding: 0 14px;
+  }
+  .error-notice {
+    flex-wrap: wrap;
+  }
+  .message {
+    gap: 11px;
+  }
+  .message-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+  }
+  .message-meta {
+    margin-top: 4px;
+  }
+  .message-content {
+    font-size: 12px;
+  }
+}
+@media (max-width: 440px) {
+  .agent-heading p {
+    max-width: 130px;
+  }
+  .model-pill {
+    width: 34px;
+    max-width: 34px;
+    justify-content: center;
+    padding: 0;
+    font-size: 0;
+  }
+  .model-pill:not([data-configured="true"]) {
+    width: 62px;
+    max-width: 62px;
+  }
+  .welcome h2 {
+    font-size: 26px;
+  }
+  .message-avatar {
+    display: none;
+  }
+  .message-meta {
+    margin-top: 0;
+  }
+}

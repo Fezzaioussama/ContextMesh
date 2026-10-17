@@ -1,0 +1,241 @@
+/* Knowledge drawer: source cards, documents, uploads, and website controls. */
+
+.source-list,
+.document-list,
+.citation-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.source-card {
+  position: relative;
+  margin-bottom: 12px;
+  padding: 15px;
+  overflow: hidden;
+  background: rgb(255 255 255 / 86%);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  animation: card-in 320ms var(--ease-out) both;
+  transition:
+    border-color var(--duration-base) ease,
+    box-shadow var(--duration-base) var(--ease-out),
+    transform var(--duration-base) var(--ease-out);
+}
+
+.source-card:hover {
+  border-color: #cad9d4;
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.source-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--accent);
+}
+
+.source-title > svg {
+  width: 30px;
+  height: 30px;
+  padding: 7px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 9px;
+}
+
+.source-title > div {
+  min-width: 0;
+  flex: 1;
+  color: var(--ink-strong);
+}
+
+.source-title strong {
+  font-size: 13px;
+  font-weight: 680;
+}
+
+.source-title p {
+  margin: 4px 0 0;
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.source-title .icon-button {
+  min-width: 30px;
+  min-height: 30px;
+  margin: -4px -5px 0 0;
+  color: var(--ink-faint);
+}
+
+.source-title .icon-button:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.confirm-delete {
+  display: inline-flex;
+  gap: 10px;
+  animation: reveal var(--duration-base) var(--ease-out) both;
+}
+
+.danger,
+.text-button.danger {
+  color: var(--danger);
+}
+
+.upload-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 13px 0 5px;
+  padding: 8px 12px;
+  color: #315d56;
+  background: #f6faf8;
+  border: 1px dashed #a9cbc1;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) ease,
+    background-color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    transform var(--duration-base) var(--ease-out);
+}
+
+.upload-button:hover {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border-color: #7fb6a9;
+  transform: translateY(-1px);
+}
+
+.upload-button:focus-within {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.upload-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.upload-button[data-busy="true"] {
+  opacity: 0.66;
+}
+
+.document-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 0;
+  color: var(--ink-soft);
+  border-top: 1px solid #edf1ef;
+}
+
+.document-row:first-child {
+  margin-top: 5px;
+}
+
+.document-row > svg {
+  color: #82918e;
+}
+
+.document-row > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.document-row .icon-button {
+  min-width: 30px;
+  min-height: 30px;
+  color: #9aa5a3;
+}
+
+.document-row .icon-button:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.document-title {
+  display: block;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.document-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  font-size: 9px;
+  font-weight: 620;
+}
+
+.document-status::before {
+  width: 5px;
+  height: 5px;
+  flex-shrink: 0;
+  background: currentcolor;
+  border-radius: 50%;
+  content: "";
+}
+
+.document-status[data-tone="ready"] {
+  color: #247d61;
+}
+
+.document-status[data-tone="busy"] {
+  color: var(--warning);
+}
+
+.document-status[data-tone="busy"]::before {
+  animation: pulse 1.3s ease-in-out infinite;
+}
+
+.document-status[data-tone="error"] {
+  color: var(--danger);
+}
+
+.website-controls {
+  display: grid;
+  gap: 5px;
+  margin: 11px 0 4px;
+  padding: 10px 11px;
+  background: var(--surface-soft);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+}
+
+.website-controls .text-button {
+  justify-self: start;
+}
+
+.external-link {
+  color: var(--accent-strong);
+  overflow-wrap: anywhere;
+  text-decoration-color: rgb(20 125 112 / 35%);
+  text-underline-offset: 3px;
+  transition:
+    color var(--duration-fast) ease,
+    text-decoration-color var(--duration-fast) ease;
+}
+
+.external-link:hover {
+  color: #084f49;
+  text-decoration-color: currentcolor;
+}
+
+.sources-hint {
+  align-items: center;
+}

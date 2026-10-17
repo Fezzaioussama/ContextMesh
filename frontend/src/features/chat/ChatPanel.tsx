@@ -26,9 +26,9 @@ export function ChatPanel(props: ChatPanelProps) {
     props.onComplete();
   }
   const turn = useTurn(props.conversationId, props.initialDraft, props.scope.ids, complete);
-  const canSend = props.agent !== null && props.agent.configured && !props.scope.unavailable;
-  const disabled =
-    !canSend || history.loading || history.error.length > 0 || turn.pending;
+  // Sending waits for a configured agent, a searchable scope, the history, and the last turn.
+  const blockers = [props.agent?.configured !== true, props.scope.unavailable, turn.pending];
+  const disabled = [...blockers, history.loading, history.error.length > 0].some(Boolean);
 
   return (
     <>
@@ -53,26 +53,31 @@ export function ChatPanel(props: ChatPanelProps) {
           maxLength={props.agent?.limits.max_message_chars ?? 8000}
         />
         <p className="composer-disclaimer">
-          Answers cite indexed passages. Check important details in the cited
-          source.
+          Answers cite indexed passages. Check important details in the cited source.
         </p>
       </div>
     </>
   );
 }
 
-function HistoryContent(props: {
+interface HistoryProps {
   history: ReturnType<typeof useHistory>;
   pending: PendingTurn | null;
   suggest: (message: string) => void;
   disabled: boolean;
-}) {
-  const { history } = props;
-  if (history.loading) return <Loading>Loading conversation…</Loading>;
-  if (history.error.length > 0) return null;
-  if (history.messages.length === 0 && props.pending === null)
-    return <Welcome suggest={props.suggest} disabled={props.disabled} />;
-  return <MessageList messages={history.messages} pending={props.pending} />;
+}
+
+function HistoryContent(props: HistoryProps) {
+  if (props.history.loading) return <Loading>Loading conversation…</Loading>;
+  if (props.history.error.length > 0) return null; // The notice below the list explains it.
+  return <Conversation {...props} />;
+}
+
+/** The messages so far and the turn being answered, or the welcome before the first one. */
+function Conversation({ history, pending, suggest, disabled }: HistoryProps) {
+  if (history.messages.length === 0 && pending === null)
+    return <Welcome suggest={suggest} disabled={disabled} />;
+  return <MessageList messages={history.messages} pending={pending} />;
 }
 
 interface ComposerProps {
@@ -86,29 +91,20 @@ interface ComposerProps {
 
 function Composer(props: ComposerProps) {
   const empty = props.draft.trim().length === 0;
-  function send() {
+  function send(event: FormEvent) {
+    event.preventDefault();
     if (!props.disabled && !empty) props.submit();
   }
-  function onSubmit(event: FormEvent) {
-    event.preventDefault();
-    send();
-  }
-  function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    // Enter sends; Shift+Enter and IME composition keep typing.
-    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
-    event.preventDefault();
-    send();
-  }
   return (
-    <form className="composer" onSubmit={onSubmit}>
-      <label className="sr-only" htmlFor="message">
-        Message {AGENT_NAME}
-      </label>
+    <form className="composer" onSubmit={send}>
+      <label className="sr-only" htmlFor="message">Message {AGENT_NAME}</label>
       <textarea
         id="message"
         value={props.draft}
         onChange={(event) => props.change(event.target.value)}
-        onKeyDown={onKeyDown}
+        onKeyDown={(event) => {
+          if (isSendKey(event)) send(event);
+        }}
         placeholder="Ask a question about your sources…"
         maxLength={props.maxLength}
         disabled={props.disabled}
@@ -133,6 +129,11 @@ function Composer(props: ComposerProps) {
   );
 }
 
+/** Enter sends; Shift+Enter and IME composition keep typing. */
+function isSendKey(event: KeyboardEvent<HTMLTextAreaElement>): boolean {
+  return event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing;
+}
+
 /**
  * A null scope searches every eligible source. An explicit selection is a hard
  * bound: removed sources narrow it, and it never silently widens to "all".
@@ -143,11 +144,21 @@ export function effectiveScope(scope: string[] | null, sources: Source[]): Searc
   return { ids: known, unavailable: known.length === 0 };
 }
 
-/** Choosing a source while "all" is active narrows the search to that source. */
+/**
+ * Choosing a source while "all" is active narrows the search to that source; clearing the
+ * last one or choosing every one searches all again.
+ */
 function toggledScope(scope: string[] | null, id: string, sources: Source[]): string[] | null {
   if (scope === null) return [id];
   const next = scope.includes(id) ? scope.filter((item) => item !== id) : [...scope, id];
-  return next.length === 0 || next.length === sources.length ? null : next;
+  return [0, sources.length].includes(next.length) ? null : next;
+}
+
+/** What the next message searches, in one line. */
+function scopeSummary(scope: SearchScope, total: number): string {
+  if (scope.unavailable) return "Selected sources are no longer searchable";
+  if (scope.ids === null) return `Searching all ${total} sources`;
+  return `Searching ${scope.ids.length} of ${total} sources`;
 }
 
 interface ScopePickerProps {
@@ -159,14 +170,9 @@ interface ScopePickerProps {
 function ScopePicker({ sources, scope, change }: ScopePickerProps) {
   if (sources.length === 0 && !scope.unavailable)
     return <span className="scope-summary">No indexed sources yet</span>;
-  const summary = scope.unavailable
-    ? "Selected sources are no longer searchable"
-    : scope.ids === null
-      ? `Searching all ${sources.length} sources`
-      : `Searching ${scope.ids.length} of ${sources.length} sources`;
   return (
     <details className="scope-picker" data-unavailable={scope.unavailable}>
-      <summary>{summary}</summary>
+      <summary>{scopeSummary(scope, sources.length)}</summary>
       <fieldset>
         <legend>Sources to search</legend>
         <label>

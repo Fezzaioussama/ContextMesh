@@ -1,3 +1,4 @@
+import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   conversations,
@@ -12,6 +13,7 @@ import type {
   CompletedTurn,
   Conversation,
   Message,
+  Page,
   TurnStreamEvent,
 } from "../../api/contracts";
 
@@ -81,6 +83,35 @@ function readAttempt(id: string): PendingAttempt | null {
   }, null);
 }
 
+/**
+ * Awaits `request` and hands its result to `done`, or its error as display text to `failed`,
+ * unless `signal` aborted meanwhile: a superseded or unmounted request never updates state.
+ * A `done` that throws is reported through `failed` too.
+ *
+ * @returns Whether the request still counts, so the caller can end its loading state.
+ */
+async function settle<T>(
+  signal: AbortSignal,
+  request: Promise<T>,
+  done: (value: T) => void,
+  failed: (message: string) => void,
+): Promise<boolean> {
+  try {
+    const value = await request;
+    if (!signal.aborted) done(value);
+  } catch (failure) {
+    if (!signal.aborted) failed(describeError(failure));
+  }
+  return !signal.aborted;
+}
+
+/** `previous` with `items` merged in by id: known ones replaced in place, new ones appended. */
+function mergedById<T extends { id: string }>(previous: T[], items: T[]): T[] {
+  const merged = new Map(previous.map((item) => [item.id, item]));
+  items.forEach((item) => merged.set(item.id, item));
+  return [...merged.values()];
+}
+
 export function useMetadata() {
   const [agent, setAgent] = useState<AgentMetadata | null>(null);
   const [error, setError] = useState("");
@@ -89,15 +120,7 @@ export function useMetadata() {
   useEffect(() => {
     const controller = new AbortController();
     setError("");
-    async function load() {
-      try {
-        const result = await metadata(controller.signal);
-        if (!controller.signal.aborted) setAgent(result);
-      } catch (failure) {
-        if (!controller.signal.aborted) setError(describeError(failure));
-      }
-    }
-    void load();
+    void settle(controller.signal, metadata(controller.signal), setAgent, setError);
     return () => controller.abort();
   }, [revision]);
 
@@ -118,21 +141,12 @@ export function useConversations() {
     active.current = controller;
     setLoading(true);
     setError("");
-    try {
-      const page = await conversations(next, controller.signal);
-      if (controller.signal.aborted) return;
-      setItems((previous) => {
-        if (!append) return page.items;
-        const unique = new Map(previous.map((item) => [item.id, item]));
-        page.items.forEach((item) => unique.set(item.id, item));
-        return [...unique.values()];
-      });
+    const received = (page: Page<Conversation>) => {
+      setItems((previous) => (append ? mergedById(previous, page.items) : page.items));
       setCursor(page.next_cursor);
-    } catch (failure) {
-      if (!controller.signal.aborted) setError(describeError(failure));
-    } finally {
-      if (!controller.signal.aborted) setLoading(false);
-    }
+    };
+    if (await settle(controller.signal, conversations(next, controller.signal), received, setError))
+      setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -147,15 +161,8 @@ export function useConversations() {
     ]);
   }
 
-  return {
-    items,
-    cursor,
-    loading,
-    error,
-    insert,
-    refresh: () => load(null, false),
-    more: () => load(cursor, true),
-  };
+  const refresh = () => load(null, false);
+  return { items, cursor, loading, error, insert, refresh, more: () => load(cursor, true) };
 }
 
 /** `keepScope` carries the current conversation's sources into the new one. */
@@ -176,13 +183,11 @@ export function useCreateConversation(
     active.current = controller;
     setPending(true);
     setError("");
+    const done = (conversation: Conversation) => created(conversation, draft, keepScope);
     try {
-      const result = await createConversation(controller.signal);
-      if (!controller.signal.aborted) created(result, draft, keepScope);
-    } catch (failure) {
-      if (!controller.signal.aborted) setError(describeError(failure));
+      if (await settle(controller.signal, createConversation(controller.signal), done, setError))
+        setPending(false);
     } finally {
-      if (!controller.signal.aborted) setPending(false);
       active.current = null;
     }
   }
@@ -202,14 +207,8 @@ export function useHistory(conversationId: string) {
     setLoading(true);
     setError("");
     async function load() {
-      try {
-        const result = await history(conversationId, controller.signal);
-        if (!controller.signal.aborted) setMessages(result);
-      } catch (failure) {
-        if (!controller.signal.aborted) setError(describeError(failure));
-      } finally {
-        if (!controller.signal.aborted) setLoading(false);
-      }
+      const request = history(conversationId, controller.signal);
+      if (await settle(controller.signal, request, setMessages, setError)) setLoading(false);
     }
     void load();
     return () => controller.abort();
@@ -217,12 +216,7 @@ export function useHistory(conversationId: string) {
 
   /** Add a finished turn's messages without reloading the conversation. */
   function complete(turn: CompletedTurn) {
-    setMessages((previous) => {
-      const merged = new Map(previous.map((message) => [message.id, message]));
-      merged.set(turn.user_message.id, turn.user_message);
-      merged.set(turn.assistant_message.id, turn.assistant_message);
-      return [...merged.values()];
-    });
+    setMessages((previous) => mergedById(previous, [turn.user_message, turn.assistant_message]));
   }
 
   return {
@@ -245,86 +239,118 @@ export function useTurn(
   onComplete: (turn: CompletedTurn) => void,
 ) {
   const [draft, setDraft] = useState(() => readAttempt(id)?.message ?? suggestion);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
-  const active = useRef<AbortController | null>(null);
   const attempt = useRef(readAttempt(id));
-  const [stream, setStream] = useState<PendingTurn | null>(null);
+  const { stream, error, busy, cancel, clear, send } = useTurnStream();
 
   useEffect(() => {
     attempt.current = readAttempt(id);
     setDraft(attempt.current?.message ?? suggestion);
-    setPending(false);
-    setStream(null);
-    setError("");
-    return () => {
-      active.current?.abort();
-      active.current = null;
-    };
-  }, [id, suggestion]);
+    clear();
+    return cancel;
+  }, [id, suggestion, clear, cancel]);
 
-  function submit() {
-    if (active.current !== null) return;
-    const message = draft.trim();
-    if (message.length === 0) return;
-    const previous = attempt.current;
-    const unchanged =
-      previous !== null &&
-      previous.message === message &&
-      JSON.stringify(previous.sourceIds) === JSON.stringify(scope);
-    const current = unchanged
-      ? previous
-      : { message, sourceIds: scope?.slice() ?? null, key: crypto.randomUUID() };
-    void run(current);
+  function completed(turn: CompletedTurn) {
+    safely(() => sessionStorage.removeItem(attemptKey(id)), undefined);
+    attempt.current = null;
+    setDraft("");
+    onComplete(turn);
   }
 
-  async function run(current: PendingAttempt) {
-    if (active.current !== null) return;
-    const controller = new AbortController();
-    active.current = controller;
+  /** Saves the attempt before sending, so a reload can retry it with the same key. */
+  function run(current: PendingAttempt) {
+    if (busy()) return;
     attempt.current = current;
     safely(() => sessionStorage.setItem(attemptKey(id), JSON.stringify(current)), undefined);
-    setPending(true);
+    void send(id, current, completed);
+  }
+
+  function submit() {
+    const message = draft.trim();
+    if (message.length > 0) run(nextAttempt(attempt.current, message, scope));
+  }
+
+  function retry() {
+    if (attempt.current !== null) run(attempt.current);
+  }
+
+  return { draft, setDraft, pending: stream !== null, stream, error, submit, retry };
+}
+
+/** The attempt to send: the saved one while message and scope are unchanged, else a new key. */
+function nextAttempt(
+  previous: PendingAttempt | null,
+  message: string,
+  scope: string[] | null,
+): PendingAttempt {
+  const unchanged =
+    previous?.message === message &&
+    JSON.stringify(previous.sourceIds) === JSON.stringify(scope);
+  return unchanged ? previous : { message, sourceIds: scope, key: crypto.randomUUID() };
+}
+
+/**
+ * The turn in flight, with its streamed draft and its error. One turn runs at a time:
+ * callers check `busy()` before `send`, and `cancel` stops a superseded or unmounted turn
+ * so it never updates state.
+ */
+function useTurnStream() {
+  const [stream, setStream] = useState<PendingTurn | null>(null);
+  const [error, setError] = useState("");
+  const active = useRef<AbortController | null>(null);
+  const cancel = useCallback(() => {
+    active.current?.abort();
+    active.current = null;
+  }, []);
+  const clear = useCallback(() => {
+    setStream(null);
     setError("");
-    setStream({ message: current.message, text: "", progress: "Preparing your answer…" });
-    let text = "";
-    function receive(event: TurnStreamEvent) {
-      if (controller.signal.aborted) return;
-      if (event.event === "delta") {
-        text += event.data.text;
-        if (text.length > 2_097_152) throw new Error("Answer exceeds stream limit");
-        setStream((value) => value === null ? null : { ...value, text });
-      }
-      if (event.event === "progress" && event.data.stage !== "working")
-        setStream((value) => value === null ? null : { ...value, progress: event.data.message });
-    }
+  }, []);
+
+  /** Streams one turn to `done`; its draft clears when it ends, unless it was cancelled. */
+  async function send(id: string, attempt: PendingAttempt, done: (turn: CompletedTurn) => void) {
+    const controller = new AbortController();
+    active.current = controller;
+    setError("");
+    setStream({ message: attempt.message, text: "", progress: "Preparing your answer…" });
+    const listener = streamListener(controller.signal, setStream);
+    const turn = sendMessage(id, attempt, attempt.key, controller.signal, listener);
     try {
-      const turn = await sendMessage(
-        id,
-        { message: current.message, sourceIds: current.sourceIds },
-        current.key,
-        controller.signal,
-        receive,
-      );
-      if (controller.signal.aborted) return;
-      safely(() => sessionStorage.removeItem(attemptKey(id)), undefined);
-      attempt.current = null;
-      setDraft("");
-      onComplete(turn);
-    } catch (failure) {
-      if (!controller.signal.aborted) setError(describeError(failure));
+      if (await settle(controller.signal, turn, done, setError)) setStream(null);
     } finally {
-      if (!controller.signal.aborted) {
-        setPending(false);
-        setStream(null);
-      }
       if (active.current === controller) active.current = null;
     }
   }
 
-  function retry() {
-    if (attempt.current !== null) void run(attempt.current);
-  }
+  return { stream, error, busy: () => active.current !== null, cancel, clear, send };
+}
 
-  return { draft, setDraft, pending, stream, error, submit, retry };
+/** Far above the server's answer limit; a longer stream is refused rather than rendered. */
+const maxAnswerChars = 2_097_152;
+
+/** Shows a turn's events in its pending draft until `signal` aborts. */
+function streamListener(
+  signal: AbortSignal,
+  show: Dispatch<SetStateAction<PendingTurn | null>>,
+): (event: TurnStreamEvent) => void {
+  let text = "";
+  return (event) => {
+    if (signal.aborted) return;
+    text = appendedDelta(text, event);
+    show((turn) => turn && withEvent(turn, event, text));
+  };
+}
+
+/** `text` with a delta event's text appended; throws when the answer grows past the limit. */
+function appendedDelta(text: string, event: TurnStreamEvent): string {
+  const next = event.event === "delta" ? text + event.data.text : text;
+  if (next.length > maxAnswerChars) throw new Error("Answer exceeds stream limit");
+  return next;
+}
+
+/** The pending draft after an event: deltas show `text`, progress replaces the label. */
+function withEvent(turn: PendingTurn, event: TurnStreamEvent, text: string): PendingTurn {
+  if (event.event === "delta") return { ...turn, text };
+  if (event.event === "progress" && event.data.stage !== "working")
+    return { ...turn, progress: event.data.message };
+  return turn;
 }
