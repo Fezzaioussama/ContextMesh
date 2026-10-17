@@ -346,6 +346,14 @@ def test_no_searchable_source_returns_a_gap_without_model_calls():
     assert outcome.answer.gaps
 
 
+def test_direct_markdown_preserves_paragraphs_and_code_indentation():
+    markdown = "## Example\n\n- First\n- Second\n\n```python\nif True:\n    print('hello')\n```"
+    reasoning = ScriptedReasoning()
+    reasoning.script["direct_answer"] = lambda content: {"answer": markdown}
+    outcome = run(reasoning, SourceRetriever({}), (), decisions=ScriptedDecision("direct", 0.95))
+    assert outcome.answer.text == markdown
+
+
 def test_confident_direct_route_answers_without_sources_or_retrieval():
     reasoning = ScriptedReasoning()
     reasoning.script["direct_answer"] = lambda content: {"answer": "Hello! How can I help?"}

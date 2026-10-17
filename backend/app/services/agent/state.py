@@ -231,6 +231,14 @@ def text_field(data: Mapping[str, object], name: str, limit: int) -> str:
     return _compact(value, limit)
 
 
+def markdown_field(data: Mapping[str, object], name: str, limit: int) -> str:
+    """Answers preserve paragraphs, code indentation, lists, and table separators."""
+    value = data.get(name)
+    if not isinstance(value, str):
+        raise _invalid()
+    return value.strip()[:limit]
+
+
 def flag(data: Mapping[str, object], name: str) -> bool:
     value = data.get(name)
     if not isinstance(value, bool):

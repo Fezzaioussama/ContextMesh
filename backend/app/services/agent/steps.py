@@ -37,6 +37,7 @@ from app.services.agent.state import (
     flag,
     known_sources,
     labeled,
+    markdown_field,
     merged_evidence,
     normalized_query,
     objects,
@@ -64,6 +65,7 @@ from app.services.models import (
     StructuredTask,
 )
 from app.services.retrieval import HybridRetriever
+from app.services.stream_events import progress
 from app.utils.errors import ContextMeshError
 from app.utils.logging import flow_event
 
@@ -120,6 +122,7 @@ class Agent:
 
     def route(self, state: AgentState) -> AgentState:
         """Jev chooses direct or retrieve; anything uncertain or unavailable retrieves."""
+        progress("route")
         decisions, policy = self._decisions, self._policy
         if decisions is None or not decisions.configured:
             summary = "The route classifier is unavailable. Defaulted to retrieval."
@@ -172,7 +175,7 @@ class Agent:
             "conversation": conversation_payload(state.history, self._policy.history_messages),
         }
         reply = self._call(state, "direct_answer", DIRECT, content, DIRECT_SCHEMA)
-        answer = text_field(reply.data, "answer", 8_000)
+        answer = markdown_field(reply.data, "answer", 8_000)
         if not answer:
             raise ContextMeshError("model_output_invalid")
         summary = "Generated a citation-free direct response."
@@ -210,6 +213,7 @@ class Agent:
     def retrieve(self, state: AgentState) -> AgentState:
         """One retrieval round over the selected, already authorized sources. Its passages
         wait in `candidates` for grading."""
+        progress("retrieve")
         self._require_time(state)
         round_number = state.rounds + 1
         result = self._retriever.search(state.identity, state.selected, state.queries, round_number)
@@ -363,12 +367,14 @@ class Agent:
 
     def repair(self, state: AgentState) -> AgentState:
         """Redraft once, telling the model which claims lacked support."""
+        progress("repair")
         draft = _draft(state)
         rejected = tuple(draft.claims[index].text for index in state.unsupported)
         revised = self._write(state, draft.context, rejected, "repair")
         return replace(revised, repairs=state.repairs + 1, unsupported=())
 
     def release(self, state: AgentState) -> AgentOutcome:
+        progress("release")
         return released(state, self._policy)
 
     def _write(
@@ -389,7 +395,7 @@ class Agent:
         labels = labeled(context)
         claims = []
         for item in objects(reply.data, "claims", self._policy.max_claims):
-            text = text_field(item, "text", 1000)
+            text = markdown_field(item, "text", 1000)
             keys = [label.upper() for label in string_list(item, "evidence_ids", 8, 16)]
             cited = tuple(dict.fromkeys(labels[key] for key in keys if key in labels))
             if text and cited:
@@ -428,6 +434,15 @@ class Agent:
         if state.usage.total >= self._policy.max_total_tokens:
             raise ContextMeshError("agent_budget_exceeded")
         timeout = min(self._policy.call_timeout_seconds, remaining)
+        stage = {
+            "direct_answer": "direct",
+            "search_plan": "plan",
+            "passage_rerank": "rerank",
+            "evidence_assessment": "assess",
+            "grounded_answer": "generate",
+            "claim_support": "verify",
+        }[name]
+        progress(stage)
         payload = json.dumps(content, ensure_ascii=False)
         return self._model.complete(StructuredTask(name, instructions, payload, schema, timeout))
 

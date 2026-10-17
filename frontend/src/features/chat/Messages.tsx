@@ -8,8 +8,9 @@ import type {
   Message,
   TraceStage,
 } from "../../api/contracts";
-import { ExternalLink, Icon, Loading } from "../../components/ui";
-import { AGENT_NAME } from "./hooks";
+import { ExternalLink, Icon } from "../../components/ui";
+import { Markdown } from "../../components/Markdown";
+import { AGENT_NAME, type PendingTurn } from "./hooks";
 
 function timestamp(value: string): string {
   return new Intl.DateTimeFormat(undefined, {
@@ -23,7 +24,7 @@ export function MessageList({
   pending,
 }: {
   messages: Message[];
-  pending: boolean;
+  pending: PendingTurn | null;
 }) {
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -54,15 +55,53 @@ export function MessageList({
           </article>
         ))}
       </div>
-      {pending && <Loading>Planning, searching sources, and checking citations…</Loading>}
+      {pending !== null && <StreamingMessages turn={pending} />}
       <div ref={end} />
     </section>
   );
 }
 
+function StreamingMessages({ turn }: { turn: PendingTurn }) {
+  return (
+    <div aria-busy="true">
+      <article className="message" data-role="user">
+        <div className="message-avatar">
+          <span>Y</span>
+        </div>
+        <div className="message-body">
+          <div className="message-meta">
+            <strong>You</strong>
+            <span>Sending</span>
+          </div>
+          <div className="message-content">{turn.message}</div>
+        </div>
+      </article>
+      <article className="message" data-role="assistant" aria-label="Answer in progress">
+        <div className="message-avatar">
+          <Icon name="mesh" />
+        </div>
+        <div className="message-body">
+          <div className="message-meta">
+            <strong>{AGENT_NAME}</strong>
+            <span>Writing</span>
+          </div>
+          <div className="stream-progress" role="status">{turn.progress}</div>
+          {turn.text.length > 0 && (
+            <div className="stream-draft">
+              <Markdown>{turn.text}</Markdown>
+            </div>
+          )}
+        </div>
+      </article>
+    </div>
+  );
+}
+
 function MessageContent({ message }: { message: Message }) {
-  if (message.answer === null)
+  if (message.answer === null) {
+    if (message.role === "assistant") return <Markdown>{message.content}</Markdown>;
     return <div className="message-content">{message.content}</div>;
+  }
   return (
     <AnswerView
       messageId={message.id}
@@ -132,14 +171,14 @@ function ClaimText(props: {
   anchor: (citation: string) => string;
 }) {
   if (props.answer.claims.length === 0)
-    return <p className="message-content">{props.fallback}</p>;
+    return <Markdown>{props.fallback}</Markdown>;
   const numbers = new Map(props.answer.citations.map((item) => [item.id, item.number]));
   return (
-    <p className="message-content">
+    <div className="answer-claims">
       {props.answer.claims.map((claim) => (
         <ClaimSentence key={claim.id} claim={claim} numbers={numbers} anchor={props.anchor} />
       ))}
-    </p>
+    </div>
   );
 }
 
@@ -149,19 +188,21 @@ function ClaimSentence(props: {
   anchor: (citation: string) => string;
 }) {
   return (
-    <span className="claim">
-      {props.claim.text}
-      {props.claim.citation_ids.map((id) => (
-        <a
-          key={id}
-          className="citation-marker"
-          href={`#${props.anchor(id)}`}
-          aria-label={`Citation ${props.numbers.get(id)}`}
-        >
-          {props.numbers.get(id)}
-        </a>
-      ))}{" "}
-    </span>
+    <div className="claim">
+      <Markdown>{props.claim.text}</Markdown>
+      <span className="claim-citations">
+        {props.claim.citation_ids.filter((id) => props.numbers.has(id)).map((id) => (
+          <a
+            key={id}
+            className="citation-marker"
+            href={`#${props.anchor(id)}`}
+            aria-label={`Citation ${props.numbers.get(id)}`}
+          >
+            {props.numbers.get(id)}
+          </a>
+        ))}
+      </span>
+    </div>
   );
 }
 

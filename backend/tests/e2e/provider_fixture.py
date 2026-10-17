@@ -12,6 +12,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 SECRET = "fixture-sensitive-upstream-detail"
 WORD = re.compile(r"[a-z0-9]+")
 DIMENSIONS = 64
+STREAM_ANSWER = (
+    "## Live answer\n\n**Streaming works** with Café 🙂.\n\n- First item\n- Second item\n\n"
+    "```python\nprint('hello')\n"
+    "example_message = 'This intentionally long code line scrolls inside its own keyboard-accessible code block.'\n"
+    "```\n\n| Feature | Status | Detail |\n| --- | --- | --- |\n"
+    "| Streaming | Ready | Visible before completion |\n"
+    "| Markdown | Ready | Headings, code, lists, and tables |"
+)
 
 
 class ProviderFixture:
@@ -23,11 +31,13 @@ class ProviderFixture:
         self.reranks = []
         self.failures_remaining = 0
         self.lock = threading.Lock()
+        self.stream_terminal = threading.Event()
+        self.stream_terminal.set()
 
     def respond(self, payload):
         with self.lock:
             self.requests.append(payload)
-            if self.failures_remaining:
+            if self.failures_remaining and task_name(payload) == "search_plan":
                 self.failures_remaining -= 1
                 return 500, {"error": {"message": SECRET, "type": "server_error"}}
             return 200, response_body(payload)
@@ -44,6 +54,22 @@ class ProviderFixture:
 
     def tasks(self, name):
         return [request for request in self.requests if task_name(request) == name]
+
+    def decide(self, payload):
+        direct = "streaming Markdown" in payload["state"]["request"]
+        route = "direct" if direct else "retrieve"
+        probabilities = {"direct": 0.99 if direct else 0.01, "retrieve": 0.01 if direct else 0.99}
+        return 200, {
+            "answers": {
+                "retrieval_route": {
+                    "type": "choice",
+                    "choice": route,
+                    "probabilities": probabilities,
+                    "confidence": 0.99,
+                }
+            },
+            "usage": {"input_tokens": 3, "output_tokens": 1},
+        }
 
 
 def task_name(payload):
@@ -90,6 +116,7 @@ TASKS = {
         "verdicts": [{"index": claim["index"], "supported": True} for claim in content["claims"]]
     },
     "conversation_title": lambda content: {"title": "Fixture conversation"},
+    "direct_answer": lambda content: {"answer": STREAM_ANSWER},
 }
 
 
@@ -166,6 +193,7 @@ ROUTES = {
     "/v1/responses": ProviderFixture.respond,
     "/v1/embeddings": ProviderFixture.embed,
     "/v1/rerank": ProviderFixture.rerank,
+    "/v1/decisions": ProviderFixture.decide,
 }
 
 
@@ -178,12 +206,38 @@ def handler_type(fixture):
                 return
             payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             status, body = route(fixture, payload)
+            if payload.get("stream") and status == 200:
+                self._stream_response(body)
+                return
             encoded = json.dumps(body).encode()
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(encoded)))
             self.end_headers()
             self.wfile.write(encoded)
+
+        def _stream_response(self, body):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            text = body["output"][0]["content"][0]["text"]
+            for offset in range(0, len(text), 12):
+                self._event(
+                    {
+                        "type": "response.output_text.delta",
+                        "delta": text[offset : offset + 12],
+                        "output_index": 0,
+                        "content_index": 0,
+                    }
+                )
+            if not fixture.stream_terminal.wait(timeout=10):
+                return
+            self._event({"type": "response.completed", "response": body})
+
+        def _event(self, event):
+            self.wfile.write(f"data: {json.dumps(event)}\n\n".encode())
+            self.wfile.flush()
 
         def log_message(self, *_args):
             pass

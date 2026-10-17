@@ -4,8 +4,38 @@ import json
 import time
 from uuid import uuid4
 
-from provider_fixture import SECRET, task_content
+from provider_fixture import SECRET, task_content, task_name
 from runtime import ANSWER, DOCUMENT, FACT, QUESTION, request, require, upload
+
+GROUNDED_TASKS = (
+    "search_plan",
+    "passage_rerank",
+    "evidence_assessment",
+    "grounded_answer",
+    "claim_support",
+)
+
+
+def verify_agent_calls(requests, include_title=True):
+    """Assert one call per intended step, independent of parallel title ordering."""
+    observed = [task_name(payload) for payload in requests]
+    expected = list(GROUNDED_TASKS)
+    if include_title:
+        expected.append("conversation_title")
+    else:
+        observed = [name for name in observed if name != "conversation_title"]
+    require(
+        sorted(observed) == sorted(expected),
+        f"Unexpected agent tasks: {observed}; expected {expected}",
+    )
+
+
+def verify_failed_agent_calls(requests):
+    """The injected planning failure must stop research and must never auto-retry."""
+    observed = [
+        task_name(payload) for payload in requests if task_name(payload) != "conversation_title"
+    ]
+    require(observed == ["search_plan"], f"Failed agent retried or continued: {observed}")
 
 
 def create_conversation(settings):
@@ -65,7 +95,7 @@ def verify_replay(settings, fixture):
     replay = completed_turn(settings, conversation_id, key, QUESTION)
     require(first == replay, "Idempotent replay did not return the saved result")
     require(len(fixture.requests) == calls, "Replay made another provider request")
-    require(calls - before == 4, f"Expected four bounded agent calls, saw {calls - before}")
+    verify_agent_calls(fixture.requests[before:calls])
     verify_conflict(settings, conversation_id, key)
     verify_provider_bounds(fixture.requests[-1])
     verify_saved_context(settings, fixture, conversation_id)
@@ -102,8 +132,10 @@ def verify_safe_failure(settings, fixture):
     status, body, _headers = request(settings.api_url, path, {"message": QUESTION}, key)
     require(status == 503, f"Provider failure was not safe 503: {status}")
     require(SECRET not in json.dumps(body), "Raw provider diagnostic leaked")
-    require(len(fixture.requests) == before + 1, "SDK unexpectedly retried the provider")
+    verify_failed_agent_calls(fixture.requests[before:])
+    retry_before = len(fixture.requests)
     completed_turn(settings, conversation_id, key, QUESTION)
+    verify_agent_calls(fixture.requests[retry_before:], include_title=False)
     verify_single_pair(settings, path)
 
 

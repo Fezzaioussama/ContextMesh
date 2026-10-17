@@ -14,7 +14,7 @@ type IconName =
   | "trash"
   | "file";
 const paths: Record<IconName, string> = {
-  mesh: "M5 4h5v5H5z M14 4h5v5h-5z M5 15h5v5H5z M14 15h5v5h-5z M10 6h4 M7.5 9v6 M16.5 9v6 M10 17h4",
+  mesh: "M11 3 3 7.5v9L11 21l8-4.5 M11 3l8 4.5v4 M3 7.5l8 4.5v9 M11 12l8-4.5 M7 5.25l8 4.5v9 M7 9.75v4.5l8 4.5 M15 9.75l6-3.5v9l-6 3.5",
   plus: "M12 5v14 M5 12h14",
   chat: "M4 5h16v12H9l-5 4z",
   arrow: "M12 19V5 M5 12l7-7 7 7",

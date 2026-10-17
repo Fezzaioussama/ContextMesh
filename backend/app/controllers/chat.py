@@ -1,17 +1,22 @@
 """Assistant endpoints and their published shapes. Synchronous endpoints run model and
 SQL I/O in FastAPI's worker pool."""
 
+import json
+from collections.abc import Iterator
 from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, StrictStr, computed_field, field_validator
+from starlette.background import BackgroundTask
+from starlette.responses import StreamingResponse
 
 from app.controllers.http import Principal
 from app.controllers.sources import LocatorResponse
 from app.controllers.sources import Service as Sources
 from app.services.chat import ConversationService
+from app.services.chat_stream import ChatStream
 from app.services.models import DEFAULT_TITLE, Conversation, Message, Page, TurnResult
 from app.services.validation import (
     MAX_MESSAGE_CHARS,
@@ -231,3 +236,41 @@ def send_message(
 ) -> TurnResult:
     scope = None if body.source_ids is None else tuple(body.source_ids)
     return service.send(identity, conversation_id, idempotency_key, body.message, scope)
+
+
+@router.post("/conversations/{conversation_id}/messages/stream", response_class=StreamingResponse)
+def stream_message(
+    conversation_id: UUID,
+    body: SendMessage,
+    idempotency_key: Annotated[str, Header(min_length=1, max_length=128)],
+    service: Service,
+    identity: Principal,
+) -> StreamingResponse:
+    """Answer a message as SSE: `progress`, `delta`, then `completed` or `error`.
+
+    Validation, authorization, and the turn claim run before the response starts, so
+    they fail as ordinary JSON errors. Delivery closes when the response ends, even if
+    the client disconnected; the claimed turn still finishes for same-key replay.
+    """
+    scope = None if body.source_ids is None else tuple(body.source_ids)
+    stream = service.open_stream(identity, conversation_id, idempotency_key, body.message, scope)
+    return StreamingResponse(
+        _frames(stream),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+        background=BackgroundTask(stream.close),
+    )
+
+
+def _frames(stream: ChatStream) -> Iterator[str]:
+    """SSE frames for the stream's items; the result is `completed` in the turn JSON shape."""
+    try:
+        for item in stream.events():
+            if isinstance(item, TurnResult):
+                name = "completed"
+                data = TurnResponse.model_validate(item).model_dump(mode="json")
+            else:
+                name, data = item.event, dict(item.data)
+            yield f"event: {name}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+    finally:
+        stream.close()

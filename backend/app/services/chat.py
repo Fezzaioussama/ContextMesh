@@ -12,6 +12,7 @@ from app.data.retrieval import RetrievalRepository
 from app.services.agent.graph import AgentWorkflow
 from app.services.agent.prompts import TITLE, TITLE_SCHEMA
 from app.services.agent.state import AgentPolicy
+from app.services.chat_stream import SLOTS, ChatStream
 from app.services.models import (
     DEFAULT_TITLE,
     CatalogSource,
@@ -25,6 +26,7 @@ from app.services.models import (
     TurnInput,
     TurnResult,
 )
+from app.services.stream_events import progress
 from app.services.validation import (
     checked_key,
     checked_page,
@@ -104,21 +106,60 @@ class ConversationService:
     ) -> TurnResult:
         """Answer one message. Repeating an idempotency key returns the saved answer."""
         with flow_scope(conversation_id=conversation_id):
+            execution, catalog = self._prepare(identity, conversation_id, key, message, source_ids)
+            if isinstance(execution, TurnResult):
+                return execution
+            return self._run(identity, execution, catalog)
+
+    def open_stream(
+        self,
+        identity: Identity,
+        conversation_id: UUID,
+        key: str,
+        message: str,
+        source_ids: tuple[UUID, ...] | None = None,
+    ) -> ChatStream:
+        """Validate and claim before HTTP headers; admit at most eight running streams."""
+        if not SLOTS.acquire(blocking=False):
+            raise ContextMeshError("turn_in_progress")
+        try:
+            with flow_scope(conversation_id=conversation_id):
+                execution, catalog = self._prepare(
+                    identity, conversation_id, key, message, source_ids
+                )
+                return ChatStream(
+                    lambda: (
+                        execution
+                        if isinstance(execution, TurnResult)
+                        else self._run(identity, execution, catalog)
+                    )
+                )
+        except Exception:
+            SLOTS.release()
+            raise
+
+    def _prepare(
+        self,
+        identity: Identity,
+        conversation_id: UUID,
+        key: str,
+        message: str,
+        source_ids: tuple[UUID, ...] | None,
+    ) -> tuple[Execution | TurnResult, tuple[CatalogSource, ...]]:
+        with flow_scope(conversation_id=conversation_id):
             try:
                 turn = TurnInput(normalized_message(message), checked_source_filter(source_ids))
                 checked_key(key)
                 saved = self._repository.replay(identity, conversation_id, key, turn)
                 if saved is not None:
                     flow_event("ask_question", "replayed")
-                    return saved
+                    return saved, ()
                 catalog = self._catalog.eligible(identity, turn.source_ids)
                 execution = self._repository.claim(identity, conversation_id, key, turn)
             except ContextMeshError as error:
                 flow_event("ask_question", "rejected", code=error.code)
                 raise
-            if isinstance(execution, TurnResult):  # Completed concurrently under this key.
-                return execution
-            return self._run(identity, execution, catalog)
+            return execution, catalog
 
     def _run(
         self, identity: Identity, execution: Execution, catalog: tuple[CatalogSource, ...]
@@ -134,6 +175,7 @@ class ConversationService:
                 # The first question names the conversation while the agent works.
                 title = None if execution.history else pool.submit(self._title, question)
                 outcome = self._workflow.run(identity, question, execution.history, catalog)
+                progress("persist")
                 result = self._repository.complete(identity, execution, outcome)
             except Exception as error:
                 code = error.code if isinstance(error, ContextMeshError) else "internal_error"

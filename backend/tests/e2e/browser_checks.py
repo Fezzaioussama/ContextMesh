@@ -1,10 +1,11 @@
 """Browser behavior checks with real HTTP traffic, never browser route mocks."""
 
-import json
+from urllib.parse import urlparse
 
+from api_checks import verify_agent_calls, verify_failed_agent_calls, verify_single_pair
 from playwright.sync_api import expect
 from provider_fixture import SECRET
-from runtime import DOCUMENT, FACT, QUESTION, require
+from runtime import DOCUMENT, FACT, QUESTION, request, require
 
 EDITOR = "Message ContextMesh Agent"
 
@@ -36,7 +37,31 @@ def is_created_conversation(response):
 
 
 def is_completed_turn(response):
-    return response.request.method == "POST" and response.url.endswith("/messages")
+    return response.request.method == "POST" and response.url.endswith("/messages/stream")
+
+
+def require_stream(response):
+    require(response.status == 200, "Browser stream did not return HTTP 200")
+    require(
+        response.headers.get("content-type", "").startswith("text/event-stream"),
+        "Browser response did not use SSE",
+    )
+
+
+def saved_browser_turn(settings, response):
+    """After visible completion, replay the authoritative turn with the browser's key.
+
+    Readers cancel at a terminal event, so Chromium may discard its response body.
+    Replay also checks that browser output corresponds to the persisted turn.
+    """
+    require_stream(response)
+    original = response.request
+    path = urlparse(response.url).path.removesuffix("/stream")
+    status, result, _headers = request(
+        settings.api_url, path, original.post_data_json, original.headers["idempotency-key"]
+    )
+    require(status == 200, f"Browser turn was not available for canonical replay: {result}")
+    return result
 
 
 def verify_browser_sources(page, settings, log_dir):
@@ -61,10 +86,9 @@ def verify_browser_chat(page, settings, fixture):
     before = len(fixture.requests)
     with page.expect_response(is_completed_turn) as sent:
         send_message(page, QUESTION)
-    result = sent.value.json()
-    require(sent.value.status == 200, f"Browser turn failed: {result}")
     expect_grounded_answer(page)
-    require(len(fixture.requests) == before + 4, "Browser submission duplicated agent calls")
+    result = saved_browser_turn(settings, sent.value)
+    verify_agent_calls(fixture.requests[before:])
     verify_literal_output(page)
     page.reload()
     expect_grounded_answer(page)
@@ -97,12 +121,17 @@ def verify_ui_failure(page, settings, fixture):
     before = len(fixture.requests)
     with page.expect_response(is_completed_turn) as failed:
         send_message(page, QUESTION)
-    require(failed.value.status == 503, "Browser provider failure was not 503")
-    require(SECRET not in json.dumps(failed.value.json()), "Browser API exposed provider detail")
+    require_stream(failed.value)
+    message = "The model provider could not respond. Your message is saved for retry."
+    expect(page.get_by_role("alert").get_by_text(message, exact=True)).to_be_visible()
+    expect(page.locator("body")).not_to_contain_text(SECRET)
     expect(page.get_by_role("button", name="Retry message", exact=True)).to_be_visible()
-    require(len(fixture.requests) == before + 1, "Browser failure silently retried provider")
+    verify_failed_agent_calls(fixture.requests[before:])
+    retry_before = len(fixture.requests)
     retry_message(page, failed.value.request)
-    require(len(fixture.requests) == before + 5, "Explicit retry did not run one agent turn")
+    verify_agent_calls(fixture.requests[retry_before:], include_title=False)
+    history_path = urlparse(failed.value.url).path.removesuffix("/stream")
+    verify_single_pair(settings, history_path)
 
 
 def retry_message(page, original_request):
@@ -113,6 +142,56 @@ def retry_message(page, original_request):
     require(original_key == retry_key, "UI changed idempotency key during recovery")
     require(retried.value.status == 200, "UI retry did not recover saved turn")
     expect_grounded_answer(page)
+
+
+def verify_live_markdown(page, settings, fixture):
+    """Hold the upstream terminal: visible formatted text must precede completion."""
+    open_app(page, settings)
+    fixture.stream_terminal.clear()
+    try:
+        with page.expect_response(is_completed_turn) as sent:
+            send_message(page, "Show streaming Markdown")
+        expect(page.get_by_role("heading", name="Live answer", exact=True)).to_be_visible()
+        expect(page.locator("strong").filter(has_text="Streaming works")).to_be_visible()
+        expect(page.locator("pre code").filter(has_text="print('hello')")).to_be_visible()
+        expect(page.get_by_role("columnheader", name="Feature", exact=True)).to_be_visible()
+        expect(
+            page.get_by_role("cell", name="Visible before completion", exact=True)
+        ).to_be_visible()
+        expect(page.get_by_role("button", name="Send message", exact=True)).to_be_disabled()
+        expect(page.get_by_text("Direct answer", exact=True)).to_have_count(0)
+        require(fixture.tasks("direct_answer")[-1].get("stream") is True, "Provider did not stream")
+    finally:
+        fixture.stream_terminal.set()
+    expect(page.get_by_text("Direct answer", exact=True)).to_be_visible()
+    result = saved_browser_turn(settings, sent.value)
+    require(
+        result["assistant_message"]["answer"]["status"] == "direct", "Wrong direct answer route"
+    )
+    page.reload()
+    expect(page.get_by_role("heading", name="Live answer", exact=True)).to_be_visible()
+    page.set_viewport_size({"width": 390, "height": 844})
+    try:
+        table = page.get_by_role("region", name="Scrollable table", exact=True)
+        code = page.get_by_label("Code block", exact=True)
+        expect(table).to_be_visible()
+        expect(code).to_be_visible()
+        table.focus()
+        expect(table).to_be_focused()
+        code.focus()
+        expect(code).to_be_focused()
+        dimensions = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+        require(dimensions[0] <= dimensions[1], "Mobile Markdown escapes the viewport")
+        require(
+            code.evaluate("node => node.scrollWidth > node.clientWidth"),
+            "Long code did not scroll locally",
+        )
+        require(
+            table.evaluate("node => node.scrollWidth > node.clientWidth"),
+            "Table did not scroll locally",
+        )
+    finally:
+        page.set_viewport_size({"width": 1280, "height": 900})
 
 
 def verify_mobile(page, settings, log_dir):

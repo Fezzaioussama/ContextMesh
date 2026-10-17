@@ -163,3 +163,10 @@ export interface SafeErrorBody {
     retryable: boolean;
   };
 }
+
+/** Events from POST conversations/{id}/messages/stream (SSE over fetch). */
+export type TurnStreamEvent =
+  | { event: "progress"; data: { stage: string; message: string } }
+  | { event: "delta"; data: { text: string } }
+  | { event: "completed"; data: CompletedTurn }
+  | { event: "error"; data: { code: string; message: string; retryable: boolean } };

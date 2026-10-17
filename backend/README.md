@@ -19,6 +19,8 @@ backend/
     services/            # what the app does, one module per user story
       models.py          #   the values every layer shares (sources, passages, answers…)
       chat.py            #   ask a question: replay or claim the turn, run agent, save
+      chat_stream.py     #   bounded SSE delivery and disconnected-reader lifecycle
+      stream_events.py   #   fixed application progress labels
       sources.py         #   add sources, upload, delete, show evidence
       retrieval.py       #   hybrid search + rerank model (term-coverage fallback)
       indexing.py        #   worker loop, indexer, chunking, erasers
@@ -36,7 +38,7 @@ backend/
       retrieval.py       #   catalog, keyword search, passage hydration
       qdrant.py, blobs.py, llm.py, fetcher.py, tracing.py
       experiments.py     #   LangSmith datasets and experiments for `--langsmith`
-    utils/               # config, errors, logging (flow events), document parsers
+    utils/               # config, errors, logging, parsers, request-local streaming events
   migrations/versions/   # 0001 assistant … 0004 formats and websites
   evals/                 # starter corpus and golden dataset; reports/ is git-ignored
   scripts/start_{api,worker}.sh
@@ -110,6 +112,18 @@ Answers are persisted with canonical citations (document version, generation,
 chunk, heading path, and line range). History and idempotent replay withhold an
 answer whose cited document or source was deleted.
 
+`POST /api/v1/assistant/conversations/{id}/messages/stream` accepts the same input
+and `Idempotency-Key` as the JSON endpoint. It emits SSE `progress`, `delta`, then
+exactly one `completed` (the ordinary turn JSON) or safe `error`. Direct answers
+stream the provider's incremental JSON answer string; all private reasoning stays
+hidden. Grounded answers show progress until verification and canonical saving
+finish, then release the saved text. Clients must replace drafts with `completed`
+and discard them on `error` or an interrupted connection. A disconnected reader's
+bounded turn finishes for same-key replay. Delivery is limited to eight active
+streams and 128 queued events per reader; a saturated pool returns retryable 409,
+and a saturated reader fails safely. Provider calls keep their existing no-retry
+policy and wall-clock bounds.
+
 ## Run and verify
 
 ```bash
@@ -145,7 +159,7 @@ Scanned documents and images need OCR, which is not implemented; legacy binary
 Office formats are not supported. Crawls are bounded and sequential, with no
 scheduled re-crawl. Token counts are approximate; chunks are also bounded by
 characters.
-There is no streaming, reindex endpoint, or reconciliation job
+There is no reindex endpoint or reconciliation job
 for orphaned vectors yet, and agent evaluation is an offline command only
 (`evals/README.md`). Ingestion mutations do not take
 an `Idempotency-Key`, listings are capped without cursors, and readiness does not

@@ -12,7 +12,7 @@ import {
 } from "./fixtures";
 
 describe("assistant conversations", () => {
-  it("sends a normalized message and renders returned HTML as inert text", async () => {
+  it("sends a normalized message and discards returned raw HTML", async () => {
     selectConversation();
     const posts = vi.fn(async () => json(turn("<img src=x onerror=alert(1)>")));
     vi.stubGlobal(
@@ -29,9 +29,8 @@ describe("assistant conversations", () => {
     );
     fireEvent.change(input, { target: { value: "  Help me plan  " } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(
-      await screen.findByText("<img src=x onerror=alert(1)>"),
-    ).toBeTruthy();
+    await waitFor(() => expect((input as HTMLTextAreaElement).value).toBe(""));
+    expect(screen.queryByText("<img src=x onerror=alert(1)>")).toBeNull();
     expect(container.querySelector("img")).toBeNull();
     expect((input as HTMLTextAreaElement).value).toBe("");
     expect(posts).toHaveBeenCalledTimes(1);

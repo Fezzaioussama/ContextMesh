@@ -32,8 +32,8 @@ export function Sidebar(props: SidebarProps) {
           <Icon name="mesh" />
         </span>
         <span>
-          ContextMesh
-          <span className="brand-caption">YOUR CONVERSATION WORKSPACE</span>
+          Context<span className="brand-word-accent">Mesh</span>
+          <span className="brand-caption">KNOWLEDGE, CONNECTED.</span>
         </span>
         <button
           className="icon-button sidebar-close"
@@ -49,7 +49,7 @@ export function Sidebar(props: SidebarProps) {
         create={props.create}
       />
       <div className="sidebar-section">
-        <span>CONVERSATIONS</span>
+        <span>YOUR CONVERSATIONS</span>
         <button
           className="icon-button"
           aria-label="Refresh conversations"

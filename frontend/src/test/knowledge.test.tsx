@@ -114,7 +114,7 @@ describe("search scope", () => {
     expect(requests[0].headers).toEqual(requests[1].headers);
   });
 
-  it("uses a new idempotency key when the scope changes before a retry", async () => {
+  it("retries the original scope even if the selection changes after failure", async () => {
     selectConversation();
     const requests: RequestInit[] = [];
     vi.stubGlobal(
@@ -140,7 +140,8 @@ describe("search scope", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry message" }));
     await screen.findByText("A useful answer.");
     const keys = requests.map((item) => new Headers(item.headers).get("Idempotency-Key"));
-    expect(keys[0]).not.toBe(keys[1]);
+    expect(keys[0]).toBe(keys[1]);
+    expect(requests[0].body).toBe(requests[1].body);
   });
 });
 

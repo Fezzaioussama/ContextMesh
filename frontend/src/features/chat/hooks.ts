@@ -12,6 +12,7 @@ import type {
   CompletedTurn,
   Conversation,
   Message,
+  TurnStreamEvent,
 } from "../../api/contracts";
 
 export const AGENT_NAME = "ContextMesh Agent";
@@ -62,6 +63,13 @@ interface PendingAttempt {
   message: string;
   sourceIds: string[] | null;
   key: string;
+}
+
+/** The turn being answered: the sent message, the streamed draft text, and the latest progress label. */
+export interface PendingTurn {
+  message: string;
+  text: string;
+  progress: string;
 }
 
 function readAttempt(id: string): PendingAttempt | null {
@@ -241,15 +249,24 @@ export function useTurn(
   const [error, setError] = useState("");
   const active = useRef<AbortController | null>(null);
   const attempt = useRef(readAttempt(id));
+  const [stream, setStream] = useState<PendingTurn | null>(null);
 
-  useEffect(() => () => active.current?.abort(), []);
+  useEffect(() => {
+    attempt.current = readAttempt(id);
+    setDraft(attempt.current?.message ?? suggestion);
+    setPending(false);
+    setStream(null);
+    setError("");
+    return () => {
+      active.current?.abort();
+      active.current = null;
+    };
+  }, [id, suggestion]);
 
-  async function submit() {
+  function submit() {
     if (active.current !== null) return;
     const message = draft.trim();
     if (message.length === 0) return;
-    const controller = new AbortController();
-    active.current = controller;
     const previous = attempt.current;
     const unchanged =
       previous !== null &&
@@ -257,17 +274,37 @@ export function useTurn(
       JSON.stringify(previous.sourceIds) === JSON.stringify(scope);
     const current = unchanged
       ? previous
-      : { message, sourceIds: scope, key: crypto.randomUUID() };
+      : { message, sourceIds: scope?.slice() ?? null, key: crypto.randomUUID() };
+    void run(current);
+  }
+
+  async function run(current: PendingAttempt) {
+    if (active.current !== null) return;
+    const controller = new AbortController();
+    active.current = controller;
     attempt.current = current;
     safely(() => sessionStorage.setItem(attemptKey(id), JSON.stringify(current)), undefined);
     setPending(true);
     setError("");
+    setStream({ message: current.message, text: "", progress: "Preparing your answer…" });
+    let text = "";
+    function receive(event: TurnStreamEvent) {
+      if (controller.signal.aborted) return;
+      if (event.event === "delta") {
+        text += event.data.text;
+        if (text.length > 2_097_152) throw new Error("Answer exceeds stream limit");
+        setStream((value) => value === null ? null : { ...value, text });
+      }
+      if (event.event === "progress" && event.data.stage !== "working")
+        setStream((value) => value === null ? null : { ...value, progress: event.data.message });
+    }
     try {
       const turn = await sendMessage(
         id,
         { message: current.message, sourceIds: current.sourceIds },
         current.key,
         controller.signal,
+        receive,
       );
       if (controller.signal.aborted) return;
       safely(() => sessionStorage.removeItem(attemptKey(id)), undefined);
@@ -277,10 +314,17 @@ export function useTurn(
     } catch (failure) {
       if (!controller.signal.aborted) setError(describeError(failure));
     } finally {
-      if (!controller.signal.aborted) setPending(false);
-      active.current = null;
+      if (!controller.signal.aborted) {
+        setPending(false);
+        setStream(null);
+      }
+      if (active.current === controller) active.current = null;
     }
   }
 
-  return { draft, setDraft, pending, error, submit };
+  function retry() {
+    if (attempt.current !== null) void run(attempt.current);
+  }
+
+  return { draft, setDraft, pending, stream, error, submit, retry };
 }

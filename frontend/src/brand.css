@@ -1,0 +1,123 @@
+/* Brand identity and its placement across navigation, workspace, and welcome. */
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 680;
+  letter-spacing: -0.9px;
+}
+
+.brand-word-accent {
+  color: #9ce7d3;
+  font-weight: 450;
+}
+
+.brand-symbol {
+  width: 42px;
+  height: 46px;
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  color: #a1ecd7;
+  background: linear-gradient(145deg, #25504b, #173936);
+  border: 1px solid #407267;
+  border-radius: 13px;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 14%), inset 0 1px 0 rgb(255 255 255 / 12%);
+}
+
+.brand-symbol svg {
+  width: 29px;
+  height: 29px;
+}
+
+.brand-caption {
+  display: block;
+  margin-top: 7px;
+  color: #9fb6b7;
+  font-size: 8px;
+  font-weight: 650;
+  letter-spacing: 1.8px;
+}
+
+.header-brand-mark {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border: 1px solid #c2dfd5;
+  border-radius: 11px;
+}
+
+.header-brand-mark svg {
+  width: 23px;
+  height: 23px;
+}
+
+.welcome-symbol {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 28px;
+  color: #c6f6e8;
+  background: linear-gradient(140deg, #1b665a, #153c3b);
+  border: 1px solid #376b5e;
+  border-radius: 25px;
+  box-shadow: 0 18px 42px rgb(49 100 87 / 13%), inset 0 1px 0 rgb(255 255 255 / 12%);
+  animation: rise-in 650ms var(--ease-out) both;
+}
+
+.welcome-symbol svg {
+  width: 44px;
+  height: 44px;
+}
+
+.welcome-symbol::before {
+  position: absolute;
+  inset: -8px;
+  border: 1px solid #c5ded6;
+  border-radius: 32px;
+  transform: rotate(-9deg);
+  content: "";
+}
+
+@media (max-width: 1020px) {
+  .brand {
+    font-size: 20px;
+  }
+
+  .brand-symbol {
+    width: 36px;
+    height: 42px;
+  }
+
+  .brand-caption {
+    font-size: 7px;
+    letter-spacing: 1.4px;
+  }
+}
+
+@media (max-width: 760px) {
+  .header-brand-mark {
+    display: none;
+  }
+
+  .welcome-symbol {
+    width: 64px;
+    height: 64px;
+    margin-bottom: 24px;
+    border-radius: 20px;
+  }
+
+  .welcome-symbol svg {
+    width: 36px;
+    height: 36px;
+  }
+}

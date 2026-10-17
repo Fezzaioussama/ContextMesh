@@ -8,6 +8,7 @@ import type {
   Page,
   SafeErrorBody,
   Source,
+  TurnStreamEvent,
   UploadReceipt,
 } from "./contracts";
 
@@ -44,6 +45,8 @@ const errorMessages: Record<string, string> = {
     "This file type is not supported. Upload PDF, Word, PowerPoint, Excel, HTML, Markdown, or text files.",
   payload_too_large: "This file is larger than the server's upload limit.",
   invalid_input: "Check your input and try again.",
+  stream_interrupted: "The answer stream was interrupted. Your message is saved for retry.",
+  stream_invalid: "The answer stream could not be read. Your message is saved for retry.",
   wrong_source_kind: "That action does not apply to this kind of source.",
 };
 
@@ -139,18 +142,190 @@ export interface TurnRequest {
   sourceIds: string[] | null;
 }
 
-export function sendMessage(
+/**
+ * Sends a turn through the streaming endpoint and resolves with the saved turn.
+ *
+ * `onEvent` receives progress and draft text as they arrive; drafts are provisional and
+ * must be replaced by the resolved turn. A plain JSON turn response is accepted too.
+ * Throws `ApiError` on an HTTP error, a stream `error`, or an interrupted or malformed
+ * stream, and an `AbortError` when `signal` aborts.
+ */
+export async function sendMessage(
   conversationId: string,
   turn: TurnRequest,
   key: string,
   signal: AbortSignal,
+  onEvent: (event: TurnStreamEvent) => void = () => {},
 ): Promise<CompletedTurn> {
   const body =
     turn.sourceIds === null
       ? { message: turn.message }
       : { message: turn.message, source_ids: turn.sourceIds };
-  const path = `${assistant}/conversations/${id(conversationId)}/messages`;
-  return postJson(path, body, signal, { "Idempotency-Key": key });
+  const path = `${assistant}/conversations/${id(conversationId)}/messages/stream`;
+  const response = await fetch(path, {
+    method: "POST",
+    body: JSON.stringify(body),
+    signal,
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+      "Idempotency-Key": key,
+    },
+  });
+  if (!response.ok) throw await responseError(response);
+  const completed: unknown = response.headers.get("Content-Type")?.includes("application/json")
+    ? await response.json()
+    : await readTurnStream(response, signal, onEvent);
+  if (!isCompletedTurn(completed) || completed.conversation_id !== conversationId)
+    throw new ApiError("stream_invalid", true);
+  return completed;
+}
+
+const maxStreamFrame = 1_048_576;
+
+/** SSE frames are bounded independently of network chunks and decoded as UTF-8. */
+class TurnStreamParser {
+  private buffer = "";
+
+  push(text: string): TurnStreamEvent[] {
+    this.buffer += text;
+    const events: TurnStreamEvent[] = [];
+    let boundary = /\r\n\r\n|\n\n|\r\r/.exec(this.buffer);
+    while (boundary !== null) {
+      if (boundary.index > maxStreamFrame) throw new ApiError("stream_invalid", true);
+      const event = parseStreamFrame(this.buffer.slice(0, boundary.index));
+      if (event !== null) events.push(event);
+      this.buffer = this.buffer.slice(boundary.index + boundary[0].length);
+      boundary = /\r\n\r\n|\n\n|\r\r/.exec(this.buffer);
+    }
+    if (this.buffer.length > maxStreamFrame) throw new ApiError("stream_invalid", true);
+    return events;
+  }
+}
+
+function parseStreamFrame(frame: string): TurnStreamEvent | null {
+  let event = "message";
+  const data: string[] = [];
+  for (const line of frame.split(/\r\n|\r|\n/)) {
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
+  }
+  if (data.length === 0) return null;
+  if (!["progress", "delta", "completed", "error"].includes(event)) return null;
+  try {
+    return validatedStreamEvent(event, JSON.parse(data.join("\n")));
+  } catch {
+    throw new ApiError("stream_invalid", true);
+  }
+}
+
+function validatedStreamEvent(event: string, data: Record<string, unknown>): TurnStreamEvent {
+  if (data === null || typeof data !== "object") throw new Error("Invalid event");
+  const text = (key: string) => typeof data[key] === "string";
+  const valid: Record<string, boolean> = {
+    progress: text("stage") && text("message"),
+    delta: text("text"),
+    completed: isCompletedTurn(data),
+    error: text("code") && text("message") && typeof data.retryable === "boolean",
+  };
+  if (!valid[event]) throw new Error("Invalid event");
+  return { event, data } as TurnStreamEvent;
+}
+
+function record(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function stringFields(value: Record<string, unknown>, fields: string[]): boolean {
+  return fields.every((field) => typeof value[field] === "string");
+}
+
+function strings(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function nonnegativeInteger(value: unknown): boolean {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function validTrace(value: unknown): boolean {
+  return Array.isArray(value) && value.every((stage) =>
+    record(stage) && stringFields(stage, ["stage", "summary"]));
+}
+
+function validLocator(value: unknown): boolean {
+  if (!record(value)) return false;
+  return strings(value.heading_path) &&
+    nonnegativeInteger(value.line_start) && nonnegativeInteger(value.line_end) &&
+    (value.page === null || nonnegativeInteger(value.page)) &&
+    (value.slide === null || nonnegativeInteger(value.slide));
+}
+
+function validCitation(value: unknown): boolean {
+  if (!record(value)) return false;
+  return stringFields(value, ["id", "source_id", "document_id", "document_version_id",
+    "index_generation_id", "chunk_id", "title", "snippet", "evidence_path"]) &&
+    nonnegativeInteger(value.number) && value.number !== 0 &&
+    validLocator(value.locator) &&
+    (value.source_url === null || typeof value.source_url === "string");
+}
+
+function validClaim(value: unknown): boolean {
+  return record(value) && stringFields(value, ["id", "text"]) && strings(value.citation_ids);
+}
+
+function validAnswer(value: unknown): boolean {
+  if (value === null) return true;
+  if (!record(value)) return false;
+  return ["direct", "answered", "partial", "insufficient_evidence", "withheld"].includes(String(value.status)) &&
+    strings(value.gaps) && Array.isArray(value.claims) && value.claims.every(validClaim) &&
+    Array.isArray(value.citations) && value.citations.every(validCitation);
+}
+
+function validMessage(value: unknown, role: string): boolean {
+  if (!record(value)) return false;
+  return value.role === role &&
+    stringFields(value, ["id", "turn_id", "content", "created_at"]) &&
+    !Number.isNaN(Date.parse(String(value.created_at))) &&
+    validAnswer(value.answer) && validTrace(value.trace);
+}
+
+function isCompletedTurn(data: unknown): data is CompletedTurn {
+  if (!record(data)) return false;
+  return stringFields(data, ["turn_id", "conversation_id"]) && data.mode === "agentic_rag" &&
+    validMessage(data.user_message, "user") && validMessage(data.assistant_message, "assistant") &&
+    validTrace(data.trace) && record(data.usage) &&
+    nonnegativeInteger(data.usage.input_tokens) && nonnegativeInteger(data.usage.output_tokens);
+}
+
+async function readTurnStream(
+  response: Response,
+  signal: AbortSignal,
+  onEvent: (event: TurnStreamEvent) => void,
+): Promise<CompletedTurn> {
+  if (response.body === null) throw new ApiError("stream_interrupted", true);
+  const reader = response.body.getReader();
+  const parser = new TurnStreamParser();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  const abort = () => { void reader.cancel().catch(() => {}); };
+  signal.addEventListener("abort", abort, { once: true });
+  try {
+    while (!signal.aborted) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      for (const event of parser.push(decoder.decode(chunk.value, { stream: true }))) {
+        if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+        if (event.event === "error") throw new ApiError(event.data.code, event.data.retryable);
+        if (event.event === "completed") return event.data;
+        onEvent(event);
+      }
+    }
+    throw new ApiError("stream_interrupted", true);
+  } finally {
+    signal.removeEventListener("abort", abort);
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
 }
 
 // Sources

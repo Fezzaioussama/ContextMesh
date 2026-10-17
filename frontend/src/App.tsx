@@ -93,6 +93,9 @@ export function App() {
           >
             <Icon name="menu" />
           </button>
+          <span className="header-brand-mark" aria-hidden="true">
+            <Icon name="mesh" />
+          </span>
           <div className="agent-heading">
             <h1>{AGENT_NAME}</h1>
             <p>{retrievalSummary(sources.searchable)}</p>

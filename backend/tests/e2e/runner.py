@@ -20,6 +20,7 @@ from api_checks import (
 from browser_checks import (
     verify_browser_chat,
     verify_browser_sources,
+    verify_live_markdown,
     verify_mobile,
     verify_ui_failure,
     verify_ui_missing_configuration,
@@ -113,6 +114,7 @@ def configured_checks(page, settings, fixture, log_dir):
     conversation_id = verify_browser_chat(page, settings, fixture)
     page.screenshot(path=str(log_dir / "desktop.png"), full_page=True)
     verify_ui_failure(page, settings, fixture)
+    verify_live_markdown(page, settings, fixture)
     verify_mobile(page, settings, log_dir)
     return conversation_id
 
@@ -159,7 +161,7 @@ def main():
     )
     print(
         "Verified upload->index->cited answer, replay, safe failure/retry, history/restart, "
-        "no-key, inert HTML, mobile/keyboard."
+        "no-key, inert HTML, live provider streaming and Markdown, mobile/keyboard."
     )
 
 

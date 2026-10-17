@@ -102,7 +102,8 @@ def api_environment(settings, provider_url, configured=True):
         OPENROUTER_EMBEDDING_MODEL="fixture/embedding",
         OPENROUTER_RERANK_MODEL="fixture/rerank",
         OPENROUTER_BASE_URL=provider_url,
-        CONTEXTMESH_DECISION_ENABLED="false",
+        CONTEXTMESH_DECISION_ENABLED="true",
+        CONTEXTMESH_DECISION_ENDPOINT=f"{provider_url}/decisions",
         CONTEXTMESH_ALLOWED_ORIGINS=json.dumps([settings.frontend_url]),
     )
     if not configured:

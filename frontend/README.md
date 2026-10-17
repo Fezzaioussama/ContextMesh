@@ -1,10 +1,24 @@
 # ContextMesh frontend
 
 The React/TypeScript UI provides saved conversations with the ContextMesh Agent,
-a **Sources** drawer for creating sources and uploading Markdown/text files (with
-live indexing status), a per-message search-scope picker, and grounded answers
-that show status, cited claims, evidence passages, gaps, and the agent's trace.
-It consumes only the backend HTTP API (see `/docs` on the running API).
+a **Sources** drawer for creating file or website sources (with live indexing
+status), a per-message search-scope picker, and grounded answers with canonical
+citations, evidence passages, gaps, and the agent's trace. Chat uses the streaming
+HTTP endpoint to show progress and answer text before the saved turn arrives.
+Direct responses stream during generation; sourced answers wait for verification
+and publication checks before their text is released.
+
+Answers render GitHub-flavored Markdown, including headings, lists, tables, and
+fenced code. Model-supplied HTML stays inactive, remote images are not loaded, and
+only controlled citation markers can navigate to evidence. Interrupted requests
+keep their idempotency key and original source selection for an explicit retry.
+The UI consumes only the backend HTTP API (see `/docs` on the running API).
+
+Shared visual tokens and reduced-motion defaults live in `src/design-system.css`.
+`src/brand.css` owns the wordmark and logo placement, while `src/styles.css`,
+`src/knowledge.css`, and `src/message-content.css` style the workspace, knowledge,
+and answer-reading experiences. The SVG browser icon is
+`public/contextmesh-mark.svg`; its geometry matches the shared mesh icon.
 
 Install Node.js 24+ and run these commands from the repository root:
 

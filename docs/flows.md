@@ -65,12 +65,20 @@ without their query string.
 
 1. `controllers/chat.py` `send_message`
    (`POST /api/v1/assistant/conversations/{id}/messages`, `Idempotency-Key` header).
+   `stream_message` also accepts the same input at `messages/stream`. It validates,
+   authorizes, replays or claims before sending SSE headers. `progress` events and
+   two-second heartbeats keep long searches visible; `completed` carries exactly
+   the ordinary turn JSON, and `error` carries safe code/message/retryable fields.
 2. `services/chat.py` `ConversationService.send`: a repeated key returns the saved
    answer; otherwise `ChatRepository` (`data/chat.py`) claims the turn, the agent
    runs with no transaction open, and the answer and citations are saved. On a
    conversation's first question, the chat model names it in parallel
    (`rename_untitled`); a title slower than 5 s after the answer falls back to the
    question, and a title chosen at creation is never replaced.
+   `services/chat_stream.py` delivers at most 128 queued events through a fixed
+   eight-worker pool, with eight admission slots. A disconnected reader drops its
+   buffers while the bounded claimed turn finishes for idempotent replay. A slow
+   reader whose queue fills fails safely rather than accumulating output.
 3. The agent (`services/agent/`) is one LangGraph run. **route** (Jev classifier)
    picks a path; uncertain or unavailable routing retrieves:
    - grounded: plan (standalone question, rewrites, keywords, hypothetical answer)
@@ -79,12 +87,22 @@ without their query string.
      repair (once) → release;
    - direct (greetings, rewriting, general reasoning): direct → release, no
      citations.
+   For streaming direct answers, `data/llm.py` requests Responses `stream=true`
+   and incrementally decodes only the JSON `answer` string into `delta` events;
+   internal reasoning, provider diagnostics, and title output are never streamed.
+   Grounded prose is withheld through claim verification and the canonical
+   repository completion checks; only the saved authoritative answer is emitted.
+   A failure after direct deltas invalidates the partial answer; clients discard
+   it and may retry with the same idempotency key. The existing JSON endpoint
+   keeps its original model transport and response shape.
 4. With `LANGSMITH_TRACING=true`, the turn is one LangSmith run `ask_question`
    (`data/tracing.py`). The worker is never traced.
 
 Logs: `turn_started`, `agent_<step>` per step, `route_decided route=… p_direct=…`,
 then `answered status=… citations=… tokens=…` or `failed code=…`. A replay logs
 `replayed`; a refusal before the turn starts logs `rejected code=…`.
+Streaming delivery also logs `stream_ended completed=…`; stage events contain
+fixed display messages, never prompts or retrieved passage text.
 
 ## `delete_document` / `delete_source`
 

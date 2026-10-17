@@ -13,6 +13,7 @@ from math import isclose, isfinite
 
 import httpx
 from openai import BadRequestError, OpenAI, OpenAIError
+from pydantic_core import from_json
 
 from app.services.models import (
     ChoiceReply,
@@ -23,6 +24,7 @@ from app.services.models import (
     Usage,
 )
 from app.utils.errors import ContextMeshError
+from app.utils.streaming import StreamEvent, emit, streaming
 
 FENCED = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 PROBABILITY_SUM_TOLERANCE = 1e-6  # Allows only ordinary response float-rounding drift.
@@ -77,9 +79,12 @@ class OpenRouterReasoningModel:
             },
             timeout=task.timeout_seconds,
         )
+        live = streaming() and task.name == "direct_answer"
+        if live:
+            arguments["stream"] = True
         try:
             with self.client.responses.with_streaming_response.create(**arguments) as raw:
-                response = _within(task.timeout_seconds, raw)
+                response = _within(task.timeout_seconds, raw, live)
         except (OpenAIError, ValueError, httpx.HTTPError, httpx.StreamError):
             raise ContextMeshError("provider_unavailable") from None
         return StructuredReply(_data(response), _usage(response))
@@ -89,15 +94,56 @@ class OpenRouterReasoningModel:
             self.client.close()
 
 
-def _within(seconds: float, raw):
+def _within(seconds: float, raw, live: bool = False):
     """Bound the whole call: providers may trickle keep-alive bytes past read timeouts."""
-    timer = threading.Timer(seconds, raw.http_response.close)
-    timer.daemon = True
-    timer.start()
+    with _Deadline(seconds, None) as deadline:
+        deadline.watch(raw.http_response)
+        response = _answer_stream(raw.parse(), deadline) if live else raw.parse()
+        if deadline.expired:
+            raise ContextMeshError("provider_unavailable")
+        return response
+
+
+def _answer_stream(events, deadline):
+    """Expose only the direct answer's JSON string; all other model events stay private."""
+    encoded, delivered = "", ""
+    for event in events:
+        if deadline.expired:
+            raise ContextMeshError("provider_unavailable")
+        if event.type == "response.output_text.delta":
+            encoded += event.delta
+            if len(encoded) > 262_144:
+                raise ContextMeshError("model_output_limit")
+            delivered = _answer_delta(encoded, delivered)
+        elif event.type == "response.completed":
+            answer = _data(event.response).get("answer")
+            if not isinstance(answer, str):
+                raise ContextMeshError("model_output_invalid")
+            _answer_delta(json.dumps({"answer": answer}), delivered)
+            return event.response
+        elif event.type in {"response.failed", "response.incomplete"}:
+            _data(event.response)
+            raise ContextMeshError("provider_unavailable")
+        elif event.type == "error":
+            raise ContextMeshError("provider_unavailable")
+    raise ContextMeshError("provider_unavailable")
+
+
+def _answer_delta(encoded: str, delivered: str) -> str:
     try:
-        return raw.parse()
-    finally:
-        timer.cancel()
+        partial = from_json(encoded, allow_partial="trailing-strings")
+    except ValueError:
+        return delivered
+    answer = partial.get("answer") if isinstance(partial, dict) else None
+    if not isinstance(answer, str):
+        return delivered
+    answer = answer.strip()[:8000]
+    if not answer.startswith(delivered):
+        raise ContextMeshError("model_output_invalid")
+    delta = answer[len(delivered) :]
+    if delta:
+        emit(StreamEvent("delta", {"text": delta}))
+    return answer
 
 
 def _data(response) -> dict:

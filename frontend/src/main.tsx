@@ -4,6 +4,7 @@ import { App } from "./App";
 import "./design-system.css";
 import "./styles.css";
 import "./knowledge.css";
+import "./brand.css";
 
 const root = document.getElementById("root");
 if (root === null) throw new Error("The application root is missing.");

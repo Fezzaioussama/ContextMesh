@@ -1,7 +1,7 @@
 import type { FormEvent, KeyboardEvent } from "react";
 import type { AgentMetadata, CompletedTurn, Source } from "../../api/contracts";
 import { ErrorNotice, Icon, Loading } from "../../components/ui";
-import { AGENT_NAME, useHistory, useTurn } from "./hooks";
+import { AGENT_NAME, useHistory, useTurn, type PendingTurn } from "./hooks";
 import { MessageList } from "./Messages";
 
 export interface SearchScope {
@@ -35,14 +35,14 @@ export function ChatPanel(props: ChatPanelProps) {
       <div className="chat-scroll">
         <HistoryContent
           history={history}
-          pending={turn.pending}
+          pending={turn.stream}
           suggest={turn.setDraft}
           disabled={disabled}
         />
         <ErrorNotice message={history.error} retry={history.refresh} />
       </div>
       <div className="composer-area">
-        <ErrorNotice message={turn.error} retry={turn.submit} label="Retry message" />
+        <ErrorNotice message={turn.error} retry={turn.retry} label="Retry message" />
         <ScopePicker sources={props.sources} scope={props.scope} change={props.changeScope} />
         <Composer
           draft={turn.draft}
@@ -63,14 +63,14 @@ export function ChatPanel(props: ChatPanelProps) {
 
 function HistoryContent(props: {
   history: ReturnType<typeof useHistory>;
-  pending: boolean;
+  pending: PendingTurn | null;
   suggest: (message: string) => void;
   disabled: boolean;
 }) {
   const { history } = props;
   if (history.loading) return <Loading>Loading conversation…</Loading>;
   if (history.error.length > 0) return null;
-  if (history.messages.length === 0)
+  if (history.messages.length === 0 && props.pending === null)
     return <Welcome suggest={props.suggest} disabled={props.disabled} />;
   return <MessageList messages={history.messages} pending={props.pending} />;
 }
@@ -117,7 +117,7 @@ function Composer(props: ComposerProps) {
       <div className="composer-bottom">
         <span>
           {props.pending
-            ? "The agent is researching your sources…"
+            ? "Writing your answer…"
             : "Enter to send · Shift + Enter for a new line"}
         </span>
         <button
