@@ -41,7 +41,7 @@ backend/
     utils/               # config, errors, logging, parsers, request-local streaming events
   migrations/versions/   # 0001 assistant … 0004 formats and websites
   evals/                 # starter corpus and golden dataset; reports/ is git-ignored
-  scripts/start_{api,worker}.sh
+  scripts/start_{api,worker}.sh   # Compose processes; start_app.sh runs both (Railway)
   tests/{unit,integration,e2e}/
 ```
 

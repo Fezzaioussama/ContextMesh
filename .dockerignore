@@ -11,3 +11,11 @@
 **/build
 **/*.egg-info
 .data
+# Not needed in any image: tooling, docs, tests, and local outputs
+.agents
+.claude
+.github
+graphify-out
+docs
+backend/tests
+backend/evals/reports

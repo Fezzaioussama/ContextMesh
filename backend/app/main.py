@@ -4,6 +4,7 @@ from contextlib import ExitStack, asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
@@ -36,7 +37,10 @@ def create_app(
 
 
 def compose_app(config: Settings, identity: Identity, api: Api, resources: ExitStack) -> FastAPI:
-    """Routes and middleware; `resources` close when the app shuts down."""
+    """Routes, middleware, and the built frontend when configured.
+
+    `resources` close when the app shuts down.
+    """
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -61,6 +65,9 @@ def compose_app(config: Settings, identity: Identity, api: Api, resources: ExitS
     app.include_router(health_router)
     app.include_router(chat.router)
     app.include_router(sources.router)
+    if config.frontend_dir is not None:
+        # Mounted last, so API routes match first; one origin needs no CORS in production.
+        app.mount("/", StaticFiles(directory=config.frontend_dir, html=True), name="frontend")
     return app
 
 

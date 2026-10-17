@@ -1,0 +1,18 @@
+# Railway deploys the root Dockerfile's final stage: the frontend, API, and ingestion
+# worker in one service. PostgreSQL and Qdrant are separate services; see
+# docs/deploy-railway.md for the setup.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# Uploads live on this volume, which the API and worker processes share.
+requiredMountPath = "/data"
+# A volume belongs to one container, so the service cannot scale out.
+numReplicas = 1
+# Ready once migrations have run and the database answers.
+healthcheckPath = "/health/ready"
+healthcheckTimeout = 300
+# start_app.sh exits whenever the API or the worker stops, so both restart together.
+restartPolicyType = "ALWAYS"

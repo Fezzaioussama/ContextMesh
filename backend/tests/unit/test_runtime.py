@@ -1,4 +1,5 @@
-"""Owned resources close on shutdown and failure; injected services stay caller-owned."""
+"""Owned resources close on shutdown and failure; injected services stay caller-owned. A
+hosted app accepts platform database URLs and serves the built frontend beside the API."""
 
 from contextlib import ExitStack
 from unittest.mock import Mock
@@ -116,3 +117,38 @@ def test_production_external_services_own_decision_adapter(monkeypatch):
         assert external.decisions is decisions
         decisions.close.assert_not_called()
     decisions.close.assert_called_once_with()
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("postgresql://user:p%40ss@db:5432/app", "postgresql+psycopg://user:p%40ss@db:5432/app"),
+        ("postgres://user:pass@db:5432/app", "postgresql+psycopg://user:pass@db:5432/app"),
+        ("postgresql+psycopg://user:pass@db/app", "postgresql+psycopg://user:pass@db/app"),
+    ],
+    ids=["railway", "legacy-scheme", "already-psycopg"],
+)
+def test_platform_database_urls_get_the_psycopg_driver(url, expected):
+    assert Settings(_env_file=None, database_url=url).database_url == expected
+
+
+def test_other_database_drivers_are_refused():
+    with pytest.raises(ValueError, match="postgresql\\+psycopg driver"):
+        Settings(_env_file=None, database_url="mysql://user:pass@db/app")
+
+
+def test_the_built_frontend_is_served_beside_the_api(resources, tmp_path):
+    (tmp_path / "index.html").write_text("<div id=root></div>")
+    hosted = Settings(_env_file=None, openrouter_api_key="", frontend_dir=tmp_path)
+    with TestClient(main.create_app(hosted)) as client:
+        page, health = client.get("/"), client.get("/health/live")
+        missing = client.get("/api/v1/missing")
+    assert (page.status_code, page.text) == (200, "<div id=root></div>")
+    assert health.json() == {"status": "ok"}
+    assert (missing.status_code, missing.json()["error"]["code"]) == (404, "http_error")
+
+
+def test_an_empty_frontend_dir_serves_no_frontend(resources):
+    settings = Settings(_env_file=None, openrouter_api_key="", frontend_dir="")
+    with TestClient(main.create_app(settings)) as client:
+        assert (settings.frontend_dir, client.get("/").status_code) == (None, 404)

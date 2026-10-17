@@ -18,9 +18,10 @@ ingests files or bounded website crawls, combines vector and keyword retrieval,
 and returns evidence-backed claims with canonical citations. When the available
 sources do not support an answer, it reports the evidence gap instead of guessing.
 
-> **Project status:** the first agentic retrieval slice works end to end. OCR for
-> scanned documents, response streaming, enterprise connectors, and the evaluation
-> benchmark remain planned. See [current limits](#current-limits-and-roadmap).
+> **Project status:** agentic retrieval works end to end, with streamed answers
+> and an offline evaluation command. OCR for scanned documents, enterprise
+> connectors, and a baseline-versus-agent benchmark remain planned. See
+> [current limits](#current-limits-and-roadmap).
 
 ## Quick start
 
@@ -210,13 +211,21 @@ make worker-dev
 make frontend-dev
 ```
 
-Backend code and its Dockerfile are in [backend](backend). The UI is in
-[frontend](frontend).
+Backend code is in [backend](backend) and the UI in [frontend](frontend). The
+root [Dockerfile](Dockerfile) builds both: its `backend` stage runs the Compose
+API and worker, and its final stage is the single production image.
 
 `make stop` stops the containers while retaining PostgreSQL, Qdrant, and upload
 volumes. Only localhost ports are published: frontend `5173`, API `8000`,
 PostgreSQL `55432`, and Qdrant `6333`. The fixed local development identity is
 not suitable for shared hosting.
+
+### Deploy to Railway
+
+[docs/deploy-railway.md](docs/deploy-railway.md) sets up the app, PostgreSQL, and
+Qdrant on Railway. [railway.toml](railway.toml) builds the root Dockerfile into one
+service that serves the frontend, the API, and the ingestion worker. The deployment
+has no login, so anyone with its URL can use it.
 
 ## Verification
 
@@ -274,9 +283,9 @@ Implemented today:
 Not implemented yet:
 
 - OCR and image ingestion, legacy binary Office formats, scheduled re-crawls,
-  response streaming, enterprise OAuth/connectors, and live SQL/API tools;
+  user accounts and login, enterprise OAuth/connectors, and live SQL/API tools;
 - Unstructured-based parsing, S3-compatible raw storage, distributed services,
-  a reindex endpoint, orphaned-vector reconciliation, and the evaluation harness.
+  a reindex endpoint, orphaned-vector reconciliation, and a measured baseline.
 
 Supported formats currently use built-in location-preserving parsers rather than
 Unstructured.
@@ -290,15 +299,14 @@ counts are approximate, and chunks are also bounded by characters.
 
 ### Evaluation status
 
-A planned demonstration corpus covers an authentication decision record, a
-platform handbook, and rollout notes, with direct, follow-up, multi-source,
-conflicting-version, and unanswerable questions. The retrieval pipeline exists,
-but the versioned corpus, judged questions, and baseline-versus-agent benchmark
-do not. `HybridRetriever` is the conventional search path used by the agent; no
-evaluation harness runs it independently yet. Deterministic application checks
-do not establish retrieval quality or live-model performance. This ships the
-agent before the measured baseline requested by ADR 006; that deviation should
-be recorded in the decision log when the benchmark is restored.
+`make eval` runs the served agent over a JSONL golden dataset and scores
+routing, abstention, document recall and precision, quote recall, budget, and
+LLM-judged faithfulness and correctness. [backend/evals](backend/evals/README.md)
+holds a fictional starter corpus with 13 cases; `--fail-under` thresholds can gate
+CI, and `--langsmith` logs each run as an experiment. A baseline-versus-agent
+benchmark, which would run `HybridRetriever` on its own, does not exist yet. This
+ships the agent before the measured baseline requested by ADR 006; that deviation
+should be recorded in the decision log when the benchmark is restored.
 
 ## Documentation
 
@@ -307,6 +315,8 @@ be recorded in the decision log when the benchmark is restored.
 - [Backend guide](backend/README.md) — backend boundaries, ingestion, websites,
   querying, and verification.
 - [Frontend guide](frontend/README.md) — browser workspace and commands.
+- [Agent evaluation](backend/evals/README.md) — datasets, metrics, and reports.
+- [Deploy to Railway](docs/deploy-railway.md) — services, variables, and checks.
 
 Project-scoped Codex roles in [.codex/agents](.codex/agents) cover backend,
 ingestion, retrieval, frontend, QA, and independent architecture review.

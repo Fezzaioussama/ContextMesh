@@ -49,3 +49,7 @@ The [frontend Dockerfile](Dockerfile) uses the root npm workspace manifest and
 lockfile. Root Compose sets the proxy to the API service and runs Vite on
 `0.0.0.0` inside the container, with a localhost published port. Use `make dev`
 for the combined frontend, API, worker, PostgreSQL, and Qdrant stack.
+
+In production there is no Vite server: the root [Dockerfile](../Dockerfile) runs
+`npm --workspace frontend run build`, and the API serves `dist/` at `/` on the same
+origin as `/api` (see [Deploy to Railway](../docs/deploy-railway.md)).

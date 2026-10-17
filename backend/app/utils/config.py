@@ -9,6 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
 BACKEND = Path(__file__).resolve().parents[2]
+PLAIN_POSTGRES_DRIVERS = {"postgres", "postgresql"}
 
 
 @dataclass(frozen=True)
@@ -87,6 +88,9 @@ class Settings(BaseSettings):
     blob_dir: Path = Field(
         default=BACKEND.parent / ".data" / "blobs", validation_alias="CONTEXTMESH_BLOB_DIR"
     )
+    # The built frontend, served by the API at `/` in production. Unset in development,
+    # where Vite serves the frontend and proxies `/api` to the API.
+    frontend_dir: Path | None = Field(default=None, validation_alias="CONTEXTMESH_FRONTEND_DIR")
     max_upload_bytes: int = Field(
         default=20_000_000, ge=1, le=50_000_000, validation_alias="CONTEXTMESH_MAX_UPLOAD_BYTES"
     )
@@ -176,9 +180,26 @@ class Settings(BaseSettings):
     @field_validator("database_url")
     @classmethod
     def postgres_only(cls, value: str) -> str:
-        if make_url(value).drivername != "postgresql+psycopg":
-            raise ValueError("Use the postgresql+psycopg database driver.")
+        """The URL with the psycopg driver, added to a plain PostgreSQL URL.
+
+        Hosting platforms such as Railway publish `postgresql://` or legacy `postgres://`
+        URLs, so they can be referenced as they are.
+
+        Raises:
+            ValueError: The URL names another database or driver.
+        """
+        url = make_url(value)
+        if url.drivername in PLAIN_POSTGRES_DRIVERS:
+            return url.set(drivername="postgresql+psycopg").render_as_string(hide_password=False)
+        if url.drivername != "postgresql+psycopg":
+            raise ValueError("Use a PostgreSQL URL with the postgresql+psycopg driver.")
         return value
+
+    @field_validator("frontend_dir", mode="before")
+    @classmethod
+    def optional_frontend_dir(cls, value: object) -> object:
+        """An empty value means no built frontend, never the working directory."""
+        return value or None
 
     @field_validator("blob_dir")
     @classmethod

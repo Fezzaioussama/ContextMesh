@@ -63,7 +63,8 @@ services:
   api:
     build:
       context: .
-      dockerfile: backend/Dockerfile
+      dockerfile: Dockerfile
+      target: backend
     environment: *backend-environment
     ports:
       - "127.0.0.1:8000:8000"
@@ -83,7 +84,8 @@ services:
   worker:
     build:
       context: .
-      dockerfile: backend/Dockerfile
+      dockerfile: Dockerfile
+      target: backend
     entrypoint: ["sh", "/app/backend/scripts/start_worker.sh"]
     environment: *backend-environment
     volumes:
